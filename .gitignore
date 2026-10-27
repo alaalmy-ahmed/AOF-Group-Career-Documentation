@@ -6,12 +6,19 @@ Shawerma Classic/
 credentials.json
 *.env
 .env*
+!.env.example
 
 # Data files
 *.xlsx
 *.xls
 *.csv
 *.pbix
+
+# ...except the fake sample data, which is safe to share
+!sample_data/*.xlsx
+
+# Notebook outputs
+output/
 
 # OS / Office junk
 .DS_Store

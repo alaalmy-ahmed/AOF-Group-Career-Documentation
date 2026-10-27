@@ -10,7 +10,7 @@ A data pipeline and reporting system I built at **AOF Group** for its restaurant
 |---|---|---|---|
 | across the company | on scheduled tasks | daily reporting effort cut in half | 10 area managers, Development Manager, Operations Manager |
 
-> **Note on data:** this repository documents the work. Raw company data, staff names, internal IDs and credentials are kept out of version control on purpose. See [`.gitignore`](.gitignore).
+> **Note on data:** the company's real data, staff names, internal IDs and credentials are not in this repository. Everything in `sample_data/` is generated and fictional.
 
 ## At a glance
 
@@ -50,6 +50,30 @@ flowchart LR
 | **Yearly** | Power BI refresh | Yearly Report, per brand |
 
 More detail in [docs/architecture.md](docs/architecture.md).
+
+## Try it
+
+The repo includes the two production notebooks, cleaned up to run on **fake sample data** with the same structure as the real workbook: 36 branches, 10 managers, two weeks of tasks and issues, and in-cell photos.
+
+```bash
+pip install -r requirements.txt
+```
+
+**Daily distribution.** No database needed. Run [notebooks/01_daily_issue_distribution.ipynb](notebooks/01_daily_issue_distribution.ipynb). It writes `output/managers/<Manager>/<Branch>.xlsx`, one file per branch with the issue photos embedded.
+
+**Weekly load and rankings.** Start a local Postgres, which creates the tables from [sql/schema.sql](sql/schema.sql):
+
+```bash
+docker compose up -d
+```
+
+Then set the variables from [.env.example](.env.example) and run [notebooks/02_weekly_load_and_rankings.ipynb](notebooks/02_weekly_load_and_rankings.ipynb). It loads the new rows and writes the branch and manager rankings to `output/`. If you don't have Docker, set `LOAD_TO_DB=0` to skip the database and still get the rankings.
+
+| Folder | Contents |
+|---|---|
+| [notebooks/](notebooks) | The daily and weekly notebooks |
+| [sample_data/](sample_data) | Fake workbook and managers file, plus [the script that generates them](sample_data/generate_sample_data.py) |
+| [sql/](sql) | Table definitions |
 
 ## Documentation
 
