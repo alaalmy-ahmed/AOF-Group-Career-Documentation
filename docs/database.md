@@ -64,6 +64,23 @@ The workbook stores missed branches as one newline-separated text cell. The load
 
 Branch code ↔ name reference table.
 
+### `training.branch_managers`
+
+Branch → area manager. It's added by [`sql/ranking.sql`](../sql/ranking.sql) and isn't in the production export yet. The weekly notebook fully refreshes it and `branches` from the workbook on each run.
+
+## Ranking functions and views
+
+[`sql/ranking.sql`](../sql/ranking.sql) computes the weekly branch and manager rankings inside Postgres:
+
+| Object | Returns |
+|---|---|
+| `training.branch_weekly_ranking(report_date)` | Manager, branch, done rate, issues, rank, grade |
+| `training.manager_weekly_ranking(report_date)` | Manager, done rate, issues per branch, issues, rank |
+| `training.v_branch_weekly_ranking` | Branch ranking for the week ending yesterday |
+| `training.v_manager_weekly_ranking` | Manager ranking for the week ending yesterday |
+
+Power BI can import the views directly, so the weekly report no longer depends on the Excel summaries. The method and how it was checked against the pandas version are in [metrics.md](metrics.md#two-implementations).
+
 ### `lubda.operation`
 
 | Table | Columns |
@@ -104,4 +121,4 @@ ORDER BY 1, 3 DESC;
 - A primary key on each table and a unique constraint on `(date, meal, branch_missed)`, so a duplicate load is rejected by the database itself, not only by the notebook's date check.
 - Indexes on `date` (and `branch`) for the quarterly and yearly reports as history grows.
 - Foreign keys from `issues.branch` and `tasks.branch_missed` to `branches`.
-- The weekly ranking as SQL views, so Power BI reads it straight from the database.
+- Point the Power BI weekly report at the ranking views.

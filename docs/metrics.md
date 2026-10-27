@@ -1,6 +1,6 @@
 # Metrics
 
-All weekly metrics use a rolling window of the **7 days before today**. Today is left out because its data is still coming in.
+All weekly metrics use a rolling window of the **7 days ending on the report date**, which is yesterday in production. Today is left out because its data is still coming in.
 
 ## Done rate (per branch)
 
@@ -37,3 +37,27 @@ Task completion carries most of the weight. Issues count for a little more at ma
 | 0.80 – 0.90 | Fair |
 | 0.70 – 0.80 | Bad |
 | ≤ 0.70 | Terrible |
+
+## Two implementations
+
+The ranking exists twice, with the same method:
+
+| | Where | Used for |
+|---|---|---|
+| pandas | [notebook 02](../notebooks/02_weekly_load_and_rankings.ipynb), Step 3 | The weekly Excel summaries |
+| SQL | [`sql/ranking.sql`](../sql/ranking.sql) | `training.branch_weekly_ranking(date)` and `training.manager_weekly_ranking(date)`, plus the views `v_branch_weekly_ranking` / `v_manager_weekly_ranking` (week ending yesterday) for Power BI |
+
+```sql
+SELECT * FROM training.manager_weekly_ranking(DATE '2026-10-26');
+```
+
+The SQL version is built from CTEs (window, task count, misses, issues, per-branch rates) and window functions: `MAX() OVER ()` for normalising and `RANK() OVER (ORDER BY score DESC)` for ranking.
+
+**Tested against pandas** on the sample data for 8 report dates (Oct 19–26). Branch rankings match row for row. Manager rankings differ only where an average lands exactly on a half:
+
+| Manager average | pandas | SQL |
+|---|---|---|
+| 97.85 | 97.8 | 97.9 |
+| 0.25 | 0.2 | 0.3 |
+
+pandas rounds binary floats (97.85 is stored as 97.8499…) and rounds exact halves to the nearest even digit. Postgres `numeric` rounds exactly, half away from zero, which is what a reader expects. When the SQL was switched to float rounding as a check, every row matched on all 8 dates, so rounding is the only difference. It can occasionally swap two managers whose scores are almost tied.

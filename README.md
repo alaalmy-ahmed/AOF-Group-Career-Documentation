@@ -61,19 +61,19 @@ pip install -r requirements.txt
 
 **Daily distribution.** No database needed. Run [notebooks/01_daily_issue_distribution.ipynb](notebooks/01_daily_issue_distribution.ipynb). It writes `output/managers/<Manager>/<Branch>.xlsx`, one file per branch with the issue photos embedded.
 
-**Weekly load and rankings.** Start a local Postgres, which creates the tables from [sql/schema.sql](sql/schema.sql):
+**Weekly load and rankings.** Start a local Postgres, which creates the tables from [sql/schema.sql](sql/schema.sql) and the ranking functions from [sql/ranking.sql](sql/ranking.sql):
 
 ```bash
 docker compose up -d
 ```
 
-Then set the variables from [.env.example](.env.example) and run [notebooks/02_weekly_load_and_rankings.ipynb](notebooks/02_weekly_load_and_rankings.ipynb). It loads the new rows and writes the branch and manager rankings to `output/`. If you don't have Docker, set `LOAD_TO_DB=0` to skip the database and still get the rankings.
+Then set the variables from [.env.example](.env.example) and run [notebooks/02_weekly_load_and_rankings.ipynb](notebooks/02_weekly_load_and_rankings.ipynb). It loads the new rows, writes the branch and manager rankings to `output/`, and reads the same rankings back from the SQL functions in [sql/ranking.sql](sql/ranking.sql). If you don't have Docker, set `LOAD_TO_DB=0` to skip the database and still get the rankings.
 
 | Folder | Contents |
 |---|---|
 | [notebooks/](notebooks) | The daily and weekly notebooks |
 | [sample_data/](sample_data) | Fake workbook and managers file, plus [the script that generates them](sample_data/generate_sample_data.py) |
-| [sql/](sql) | Table definitions for the demo, plus the production schema exports in `sql/production/` |
+| [sql/](sql) | Table definitions, the [weekly ranking in SQL](sql/ranking.sql) (functions and views), and the production schema exports in `sql/production/` |
 
 ## Documentation
 

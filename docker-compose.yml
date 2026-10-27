@@ -1,4 +1,4 @@
-# Local PostgreSQL for notebook 02. Creates the database and tables on first start.
+# Local PostgreSQL for notebook 02. Creates the database, tables and ranking functions on first start.
 services:
   postgres:
     image: postgres:16
@@ -9,4 +9,5 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./sql/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./sql/ranking.sql:/docker-entrypoint-initdb.d/02_ranking.sql:ro
