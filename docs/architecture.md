@@ -71,7 +71,9 @@ Power BI connects to PostgreSQL. After each load, the **Weekly Report** is refre
 | `issues` | date, project, branch, problem, manager, notes |
 | `tasks` | date, project, done_tasks, branch_missed |
 
-`tasks` holds one row per branch that missed a task (`branch_missed` is empty when nothing was missed), so missed-task counts per branch come from a plain `GROUP BY`.
+`tasks` holds one row per branch that missed a task (`branch_missed` is empty when nothing was missed), so missed-task counts per branch come from a plain `GROUP BY`. There is also a `training.branches` reference table (code ↔ name).
+
+Column types, a diagram and example queries are in [database.md](database.md).
 
 ## Design decisions
 

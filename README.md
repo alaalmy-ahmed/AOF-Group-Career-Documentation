@@ -73,13 +73,14 @@ Then set the variables from [.env.example](.env.example) and run [notebooks/02_w
 |---|---|
 | [notebooks/](notebooks) | The daily and weekly notebooks |
 | [sample_data/](sample_data) | Fake workbook and managers file, plus [the script that generates them](sample_data/generate_sample_data.py) |
-| [sql/](sql) | Table definitions |
+| [sql/](sql) | Table definitions for the demo, plus the production schema exports in `sql/production/` |
 
 ## Documentation
 
 | Doc | Contents |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | The flow step by step, data model, design decisions, how the system evolved |
+| [docs/database.md](docs/database.md) | PostgreSQL databases, tables, diagram, example queries |
 | [docs/pipeline.md](docs/pipeline.md) | Each notebook and script: what it does, inputs, outputs |
 | [docs/metrics.md](docs/metrics.md) | Done rate, performance score, ranking and grading logic |
 | [docs/reports.md](docs/reports.md) | The Power BI and Excel deliverables |
