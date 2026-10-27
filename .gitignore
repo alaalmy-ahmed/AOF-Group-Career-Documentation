@@ -1,0 +1,23 @@
+# Raw company working folder: real data, staff names, Power BI files, and
+# scripts with hard-coded credentials. Keep it out of the public repo.
+Shawerma Classic/
+
+# Secrets
+credentials.json
+*.env
+.env*
+
+# Data files
+*.xlsx
+*.xls
+*.csv
+*.pbix
+
+# OS / Office junk
+.DS_Store
+._*
+~$*
+
+# Python
+__pycache__/
+.ipynb_checkpoints/
