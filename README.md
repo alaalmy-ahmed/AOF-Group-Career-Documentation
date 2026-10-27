@@ -61,13 +61,30 @@ pip install -r requirements.txt
 
 **Daily distribution.** No database needed. Run [notebooks/01_daily_issue_distribution.ipynb](notebooks/01_daily_issue_distribution.ipynb). It writes `output/managers/<Manager>/<Branch>.xlsx`, one file per branch with the issue photos embedded.
 
-**Weekly load and rankings.** Start a local Postgres, which creates the tables from [sql/schema.sql](sql/schema.sql) and the ranking functions from [sql/ranking.sql](sql/ranking.sql):
+**Weekly load and rankings.** This needs PostgreSQL (version 16 was used here).
 
-```bash
-docker compose up -d
-```
+1. Create a database called `shawarma_classic`, then run [sql/schema.sql](sql/schema.sql) and [sql/ranking.sql](sql/ranking.sql) in it. In pgAdmin: right-click *Databases* → *Create* → *Database*, then open the *Query Tool* on the new database and run each file. Or from a terminal:
 
-Then set the variables from [.env.example](.env.example) and run [notebooks/02_weekly_load_and_rankings.ipynb](notebooks/02_weekly_load_and_rankings.ipynb). It loads the new rows, writes the branch and manager rankings to `output/`, and reads the same rankings back from the SQL functions in [sql/ranking.sql](sql/ranking.sql). If you don't have Docker, set `LOAD_TO_DB=0` to skip the database and still get the rankings.
+   ```bash
+   createdb -U postgres shawarma_classic
+   ```
+   ```bash
+   psql -U postgres -d shawarma_classic -f sql/schema.sql -f sql/ranking.sql
+   ```
+
+2. Set the connection details listed in [.env.example](.env.example) as environment variables in the terminal you start Jupyter from. At minimum, set the password. On macOS / Linux:
+
+   ```bash
+   export PGPASSWORD=your-password
+   ```
+   On Windows (Command Prompt):
+   ```bash
+   set PGPASSWORD=your-password
+   ```
+
+3. Run [notebooks/02_weekly_load_and_rankings.ipynb](notebooks/02_weekly_load_and_rankings.ipynb). It loads the new rows, writes the branch and manager rankings to `output/`, and reads the same rankings back from the SQL functions in [sql/ranking.sql](sql/ranking.sql).
+
+No Postgres? Set `LOAD_TO_DB=0` the same way. The notebook skips the database and still builds the rankings.
 
 | Folder | Contents |
 |---|---|
