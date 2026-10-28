@@ -70,7 +70,7 @@ Branch → area manager. It's added by [`sql/ranking.sql`](../sql/ranking.sql) a
 
 ## Ranking functions and views
 
-[`sql/ranking.sql`](../sql/ranking.sql) computes the weekly branch and manager rankings inside Postgres:
+*Portfolio addition, not used in production.* [`sql/ranking.sql`](../sql/ranking.sql) computes the weekly branch and manager rankings inside Postgres:
 
 | Object | Returns |
 |---|---|
@@ -79,7 +79,7 @@ Branch → area manager. It's added by [`sql/ranking.sql`](../sql/ranking.sql) a
 | `training.v_branch_weekly_ranking` | Branch ranking for the week ending yesterday |
 | `training.v_manager_weekly_ranking` | Manager ranking for the week ending yesterday |
 
-Power BI can import the views directly, so the weekly report no longer depends on the Excel summaries. The method and how it was checked against the pandas version are in [metrics.md](metrics.md#two-implementations).
+These were written for this portfolio and aren't in production; at AOF the ranking is computed in pandas. Power BI could import the views directly instead of the weekly Excel summaries. The method and how it was checked against the pandas version are in [metrics.md](metrics.md#two-implementations).
 
 ### `lubda.operation`
 

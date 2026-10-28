@@ -86,6 +86,12 @@ pip install -r requirements.txt
 
 No Postgres? Set `LOAD_TO_DB=0` the same way. The notebook skips the database and still builds the rankings.
 
+### What's from production and what isn't
+
+The two notebooks are the production logic. The only edits are the ones needed to run them here: the password comes from an environment variable, the report date and output folder can be set, and the paths point at the sample data.
+
+One piece was added for this portfolio and isn't used at AOF: the **SQL version of the weekly ranking** ([sql/ranking.sql](sql/ranking.sql), the `branch_managers` table, and Steps 2b and 4 of notebook 02). In production, the ranking is computed in pandas (Step 3).
+
 | Folder | Contents |
 |---|---|
 | [notebooks/](notebooks) | The daily and weekly notebooks |

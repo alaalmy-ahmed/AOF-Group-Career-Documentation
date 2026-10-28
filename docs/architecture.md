@@ -86,7 +86,7 @@ Column types, a diagram and example queries are in [database.md](database.md).
 
 | Stage | Approach |
 |---|---|
-| Early 2024 | Manual splitting of the daily sheet per manager (`seperating.ipynb`, `Data Processing.ipynb`) |
+| Early 2024 | First scripts that split the daily sheet per manager (`seperating.ipynb`, `Data Processing.ipynb`) |
 | Late 2024 | Experiment with Google Forms → Sheets → PostgreSQL, with a backup database and a Flask push endpoint (`distributing_branches.py`, `web server database.py`) |
 | Current | Workbook → daily distribution with photos → weekly incremental load → Power BI |
 

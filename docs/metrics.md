@@ -40,12 +40,12 @@ Task completion carries most of the weight. Issues count for a little more at ma
 
 ## Two implementations
 
-The ranking exists twice, with the same method:
+Production computes the ranking in pandas. For this portfolio I also wrote it in SQL, with the same method:
 
-| | Where | Used for |
+| | Where | Status |
 |---|---|---|
-| pandas | [notebook 02](../notebooks/02_weekly_load_and_rankings.ipynb), Step 3 | The weekly Excel summaries |
-| SQL | [`sql/ranking.sql`](../sql/ranking.sql) | `training.branch_weekly_ranking(date)` and `training.manager_weekly_ranking(date)`, plus the views `v_branch_weekly_ranking` / `v_manager_weekly_ranking` (week ending yesterday) for Power BI |
+| pandas | [notebook 02](../notebooks/02_weekly_load_and_rankings.ipynb), Step 3 | Production: produces the weekly Excel summaries |
+| SQL | [`sql/ranking.sql`](../sql/ranking.sql) | Portfolio addition: `training.branch_weekly_ranking(date)` and `training.manager_weekly_ranking(date)`, plus the views `v_branch_weekly_ranking` / `v_manager_weekly_ranking` (week ending yesterday) |
 
 ```sql
 SELECT * FROM training.manager_weekly_ranking(DATE '2026-10-26');
