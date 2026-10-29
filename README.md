@@ -1,14 +1,14 @@
 # AOF Group — Operations Data Pipeline
 
-A data pipeline and reporting system I built at **AOF Group** for its restaurant brands **Shawarma Classic** and **Lubda** (Saudi Arabia). It turns the operations team's quality-control workbook into a daily action list for each area manager, a PostgreSQL history updated every week, and a set of weekly, quarterly and yearly Power BI reports.
+A data pipeline and reporting system I built at **AOF Group** for its restaurant brands **Shawarma Classic** and **Lubda** (Saudi Arabia). When I joined Shawarma Classic, quality issues reached area managers as screenshots pasted into Word files. I replaced that with a validated Excel workbook, a daily action list for each area manager, a PostgreSQL history updated every week, and weekly, monthly, quarterly and yearly Power BI reports built around two KPIs: quality issues and submission rate. When the company launched Lubda about a year and a half later, I built the same system for it from day one.
 
 **Role:** Data Analytics Engineer · February 2024 – present
 
-## Impact
+## Impact (Shawarma Classic)
 
 | **−85%** quality issues | **+15.8%** submission rate | **8 → 4 h/day** reporting time | **12** stakeholders |
 |---|---|---|---|
-| across the company | on scheduled tasks | daily reporting effort cut in half | 10 area managers, Development Manager, Operations Manager |
+| across all branches | on scheduled tasks | daily reporting effort cut in half | 10 area managers, Development Manager, Operations Manager |
 
 > **Note on data:** the company's real data, staff names, internal IDs and credentials are not in this repository. Everything in `sample_data/` is generated and fictional.
 
@@ -16,17 +16,18 @@ A data pipeline and reporting system I built at **AOF Group** for its restaurant
 
 | | |
 |---|---|
-| **Scope** | ~37 branches across Riyadh, Jeddah and the Eastern Province, 10 area managers, two brands, ~25 menu items with their own SOP checklists |
-| **Source** | Operations workbook (`07-2024.xlsx`) with daily task and quality-issue logs, including field photos; `Lubda.xlsx` for the Lubda brand |
+| **Scope** | **Shawarma Classic:** ~37 branches across Riyadh, Jeddah and the Eastern Province, 10 area managers, ~25 menu items with their own SOP checklists. **Lubda:** 2 branches, 2 supervisors, and one of the Shawarma Classic area managers |
+| **Source** | Zenput (now Crunchtime OPS Execution), entered daily into the operations workbook (`07-2024.xlsx`) with data validation and lookups; `Lubda.xlsx` for the Lubda brand |
 | **Processing** | Python / Jupyter: pandas, openpyxl, psycopg2 |
 | **Storage** | PostgreSQL: `shawarma_classic` (schema `training`) and `lubda` (schema `operation`) |
-| **Reporting** | Power BI weekly, quarterly and yearly reports in a custom brand theme; formatted Excel files for each manager |
+| **Reporting** | Power BI weekly, monthly, quarterly and yearly reports in a custom brand theme; formatted Excel files for each manager |
 | **Period** | February 2024 onward |
 
 ## Current architecture
 
 ```mermaid
 flowchart LR
+    Z[Zenput / Crunchtime] -->|data entry| X
     X[Operations workbook<br/>07-2024.xlsx<br/>tasks · quality issues · photos]
 
     X -->|daily| D[New Data Processing.ipynb]
@@ -37,6 +38,7 @@ flowchart LR
     L --> S[Weekly branch & manager<br/>performance summaries]
 
     DB --> W[Weekly Report]
+    DB --> MO[Monthly Report]
     DB --> Q[Quarterly Report]
     DB --> Y[Yearly Report]
 ```
@@ -45,9 +47,10 @@ flowchart LR
 |---|---|---|
 | **Daily** | `New Data Processing.ipynb` reads yesterday's quality issues from the workbook and splits them by area manager and branch | A folder per manager, with one formatted Excel file per branch. Each file lists that branch's issues with the photos embedded |
 | **Weekly** | `loading data to the database.ipynb` pushes the new tasks and issues into PostgreSQL and computes the weekly rankings | Updated database; branch and manager performance summaries |
-| **Weekly** | Power BI refresh | Weekly Report |
-| **Quarterly** | Power BI refresh | Quarterly report (e.g. *Q2 Analysis*) |
-| **Yearly** | Power BI refresh | Yearly Report, per brand |
+| **Weekly** | Power BI refresh | Weekly Report: each branch's last 7 days vs. the 7 before |
+| **Monthly** | Power BI refresh | Monthly Report: manager performance (branches are reassigned every month) |
+| **Quarterly** | Power BI refresh | Quarterly report (e.g. *Q2 Analysis*): branch performance |
+| **Yearly** | Power BI refresh | Yearly Report for the CEO, per brand |
 
 More detail in [docs/architecture.md](docs/architecture.md).
 

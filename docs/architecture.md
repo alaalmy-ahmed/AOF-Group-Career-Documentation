@@ -4,6 +4,7 @@
 
 ```mermaid
 flowchart TD
+    Z["Zenput / Crunchtime<br/>branch checks and tasks"] -->|data entry| X
     X["Operations workbook — 07-2024.xlsx<br/>Source Data · Reviewing Reports · branches and codes · Managers"]
     X -->|every day| D["New Data Processing.ipynb"]
     D --> M["Programming/&lt;Manager&gt;/&lt;Branch&gt;.xlsx"]
@@ -11,13 +12,14 @@ flowchart TD
     L --> DB[("PostgreSQL<br/>shawarma_classic.training<br/>lubda.operation")]
     L --> S["Branches / Managers Weekly<br/>Performance Summary.xlsx"]
     DB --> W["Weekly Report (Power BI)"]
+    DB --> MO["Monthly Report (Power BI)"]
     DB --> Q["Quarterly Report (Power BI)"]
     DB --> Y["Yearly Report (Power BI)"]
 ```
 
 ### 1. Source: the operations workbook
 
-`07-2024.xlsx` is the working file the quality team fills in every day.
+Branch checks and scheduled tasks are recorded in Zenput (now Crunchtime OPS Execution). A data-entry employee copies the results into `07-2024.xlsx` every day. I designed this workbook to replace the earlier process of screenshots pasted into Word files. Data validation on every column, lookups for branch codes and managers, and a fixed list of issue descriptions keep the entries consistent.
 
 | Sheet | Contents |
 |---|---|
@@ -53,7 +55,7 @@ Each manager opens their folder and sees only their branches, the issues and the
 
 ### 4. Reporting
 
-Power BI connects to PostgreSQL. After each load, the **Weekly Report** is refreshed. The **Quarterly** and **Yearly** reports read from the same tables, so they need no separate data preparation, just a refresh at the end of the period.
+Power BI connects to PostgreSQL. After each load, the **Weekly Report** is refreshed: it compares each branch's last 7 days with the 7 days before. The **Monthly** (manager performance), **Quarterly** (branch performance) and **Yearly** (for the CEO) reports read from the same tables, so they need no separate data preparation, just a refresh at the end of the period. See [reports.md](reports.md).
 
 ## Data model
 
@@ -77,7 +79,9 @@ Column types, a diagram and example queries are in [database.md](database.md).
 
 ## Design decisions
 
-- **Keep the workbook as the entry point.** The quality team already worked in Excel. Keeping it meant no retraining. The automation sits behind the workbook rather than replacing it.
+- **Validate at entry.** Data validation and lookups in the workbook stop most errors before they reach the pipeline.
+- **Excel first, database when needed.** The workbook was the quickest way to turn screenshots into data. When the history outgrew it, the data moved to PostgreSQL while the workbook stayed as the entry form.
+- **Manager stored on each issue.** Upper management reassigns branches between managers every month, so each issue keeps the manager responsible on that day.
 - **Daily and weekly cadences are separate.** Managers need issues the next morning; the database and reports only need to be current once a week. Separating the two keeps the daily step fast and lets the weekly load run unattended.
 - **Incremental, idempotent loads** keyed on the latest date already in the database.
 - **One database, many reports.** Weekly, quarterly and yearly reports all read the same tables, so the numbers always agree.
@@ -86,9 +90,11 @@ Column types, a diagram and example queries are in [database.md](database.md).
 
 | Stage | Approach |
 |---|---|
-| Early 2024 | First scripts that split the daily sheet per manager (`seperating.ipynb`, `Data Processing.ipynb`) |
+| Before Feb 2024 | Screenshots from Zenput pasted into Word, then one Word file per manager, made by hand |
+| Early 2024 | Structured workbook with validation and lookups; first scripts that split the daily sheet per manager (`seperating.ipynb`, `Data Processing.ipynb`) |
 | Late 2024 | Experiment with Google Forms → Sheets → PostgreSQL, with a backup database and a Flask push endpoint (`distributing_branches.py`, `web server database.py`) |
-| Current | Workbook → daily distribution with photos → weekly incremental load → Power BI |
+| Mid 2025 | Lubda launches: its own workbook, database and reports, built from the start |
+| Current | Workbook → daily distribution with photos → weekly incremental load → weekly, monthly, quarterly and yearly Power BI reports |
 
 ## Next steps
 

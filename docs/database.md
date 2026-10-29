@@ -114,7 +114,7 @@ ORDER BY 1, 3 DESC;
 
 - **Database per brand.** Lubda's columns are in Arabic and its process differs slightly. Separate databases let each evolve without breaking the other's reports.
 - **Append-only, date-based loads.** The weekly load reads `MAX(date)` and inserts only newer rows, so the tables are a growing history that Power BI can slice by week, quarter or year.
-- **Manager stored on each issue.** Branches change hands. Keeping the manager on the row means past reports still credit the manager who was responsible at the time.
+- **Manager stored on each issue.** Upper management reassigns branches between managers every month. Keeping the manager on the row means past reports still credit the manager who was responsible at the time.
 
 ## What I'd add next
 
