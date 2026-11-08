@@ -16,6 +16,7 @@ credentials.json
 
 # ...except the fake sample data, which is safe to share
 !sample_data/*.xlsx
+!v2/sample_data/*.xlsx
 
 # Notebook outputs
 output/

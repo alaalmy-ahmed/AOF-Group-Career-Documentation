@@ -4,8 +4,8 @@ The original system (v1) is at the top of this repository, unchanged; git tag `v
 
 | Step | Status | What it changes |
 |---|---|---|
-| 1. Keys and constraints | In progress | A normalised schema the database itself keeps clean: [sql/001_schema.sql](sql/001_schema.sql) |
-| 2. Safe re-runnable loads | Planned | |
+| 1. Keys and constraints | Done | A normalised schema the database itself keeps clean: [sql/001_schema.sql](sql/001_schema.sql) |
+| 2. Safe re-runnable loads | Done | [load_workbook.py](load_workbook.py) loads the workbook into the schema; a re-run adds nothing twice |
 | 3. Validation before loading | Planned | |
 | 4. Notebooks → Python modules | Planned | |
 | 5. Tests | Planned | |
@@ -38,3 +38,28 @@ The original system (v1) is at the top of this repository, unchanged; git tag `v
 Kept from v1: the manager is stored on each issue when it's loaded. Branches are reassigned every month, so the load runs before each rotation and history keeps the manager responsible at the time.
 
 The workbook stays as simple as it was for the data entry. The pipeline translates it into this model.
+
+## Step 2: the load
+
+```bash
+python v2/load_workbook.py
+```
+
+It needs the schema from step 1 and the same `PG*` environment variables as v1. By default it reads the v2 sample data.
+
+| v1 | v2 | Why |
+|---|---|---|
+| Tasks grouped by date and meal, keeping only the first due time | Grouped by date, meal **and due time** | A meal due twice a day (Arabi at 1-3 and 5-7 pm) was merged into one row in v1 |
+| Only rows newer than `MAX(date)` are inserted | Every row is inserted; `ON CONFLICT DO NOTHING` skips the ones already there | Rows added late for an earlier date are no longer missed |
+| No meal list | `meals.xlsx`, one column `Meal` | A misspelled meal is rejected instead of becoming a new meal |
+| Issues have no due time | Reviewing Reports has a `Due time` column, filled by the data entry | Each issue is matched to its scheduled task |
+| An unknown branch or meal fails with a database error, or not at all | The script stops with a message listing every unknown value | You know exactly what to fix in the workbook |
+
+Everything runs in one transaction: if any step fails, nothing from that run is saved.
+
+**Known limit:** a row that's already loaded and then edited in the workbook (for example a corrected description) isn't updated. The old version stays. If that turns out to matter, the next option is replacing a week's rows on each run.
+
+### Workbook changes for the data entry
+
+- **Reviewing Reports:** a new `Due time` column, next to `Meal`.
+- **meals.xlsx:** a new file listing the meals, one per row.
