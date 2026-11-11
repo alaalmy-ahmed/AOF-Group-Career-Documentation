@@ -7,11 +7,27 @@ The original system (v1) is at the top of this repository, unchanged; git tag `v
 | 1. Keys and constraints | Done | A normalised schema the database itself keeps clean: [sql/001_schema.sql](sql/001_schema.sql) |
 | 2. Safe re-runnable loads | Done | [load_workbook.py](load_workbook.py) loads the workbook into the schema; a re-run adds nothing twice |
 | 3. Validation before loading | Done | [validate_workbook.py](validate_workbook.py) checks the workbook and lists every problem; the load runs it first |
-| 4. Notebooks → Python modules | Planned | |
+| 4. Notebooks → Python modules | Done | The daily distribution and the weekly ranking are scripts; all settings are in [settings.py](settings.py) |
 | 5. Tests | Planned | |
 | 6. Scheduling and alerts | Planned | |
 | 7. dbt models | Planned | |
 | 8. Replacing the Excel intake | Planned | |
+
+## Running v2
+
+```bash
+pip install -r v2/requirements.txt
+psql -U postgres -d shawarma_classic -f v2/sql/001_schema.sql   # once
+```
+
+| When | Command | What it does |
+|---|---|---|
+| Any time | `python v2/validate_workbook.py` | Checks the workbook; no database needed |
+| Daily | `python v2/distribute_issues.py` | Yesterday's issues → one file per branch, in a folder per manager |
+| Weekly | `python v2/load_workbook.py` | Checks the workbook, then loads it into the database |
+| Weekly, after the load | `python v2/weekly_ranking.py` | Branch and manager ranking for the 7 days ending yesterday |
+
+On the sample data, add `REPORT_DATE=2026-10-26` (its last day) in front of the daily and ranking commands.
 
 ## Step 1: the schema
 
@@ -98,3 +114,33 @@ Rules checked in stage 3:
 Before checking, spaces at the start and end of text are removed (so `"Al Olaya "` matches `"Al Olaya"`), and fully empty rows are skipped.
 
 When checks fail, the script exits with code 1, so a scheduler (step 6) can tell the run failed.
+
+## Step 4: notebooks → Python modules
+
+v1 ran as two notebooks. v2 is a set of small `.py` files, each with one job, which a scheduler (step 6) can run:
+
+| File | Job | Replaces |
+|---|---|---|
+| [settings.py](settings.py) | Every setting (paths, database, report date) in one place | The configuration cells at the top of each notebook |
+| [validate_workbook.py](validate_workbook.py) | Read the workbook and check it | (step 3) |
+| [load_workbook.py](load_workbook.py) | Load it into the database | Notebook 02, Step 2 (step 2) |
+| [distribute_issues.py](distribute_issues.py) | Daily per-manager, per-branch files with photos | Notebook 01 |
+| [weekly_ranking.py](weekly_ranking.py) | Weekly branch and manager ranking | Notebook 02, Step 3 |
+
+Each file imports what it needs from the others (for example, `from settings import REPORT_DATE`), so nothing is copied between them.
+
+### What changed from v1, and why
+
+| v1 | v2 | Why |
+|---|---|---|
+| The daily notebook reads managers from a separate `managers.xlsx` | It uses the workbook's *Managers* sheet, like everything else | One list, so the two can never disagree |
+| An issue with a misspelled branch is silently left out of every folder | That day's issues are checked first (blanks, code matches branch, description, manager). If one fails, no files are written | Every issue reaches its manager, or you're told why not |
+| The ranking reads the workbook | It reads the v2 database, after the weekly load | The ranking and Power BI use the same data |
+| `REPORT_DATE` defaults to the sample's last day | Defaults to yesterday | Ready for a daily schedule |
+| Code to centre each photo in its cell | Removed | It never ran: openpyxl's `add_image(image, "K2")` replaces the anchor set just before it, so v1's photos were already placed at the cell's top-left |
+
+**Tested against v1:**
+- **Daily files:** v1's notebook functions and `distribute_issues.py` were run on the same day. The files are identical (cell values, photo positions and sizes, row heights, column widths). The only difference: v1 also creates empty folders for managers with no issues that day.
+- **Weekly ranking:** v1's ranking cell was run on the same tasks, with both due times kept. It matches row for row for two weeks, except one manager whose average is exactly 94.05: it rounds to 94.1 in v1 and 94.0 in v2, with the same rank. This is the same float tie noted in [metrics.md](../docs/metrics.md).
+
+**Still the same as v1:** the ranking uses each branch's *current* manager, the score method ([metrics.md](../docs/metrics.md)), the two output files, and the format of the daily files.

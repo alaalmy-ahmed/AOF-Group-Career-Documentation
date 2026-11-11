@@ -11,21 +11,16 @@ run that fails part-way changes nothing.
 Usage:
     python v2/load_workbook.py
 
-Settings (environment variables):
-    WORKBOOK_PATH  default: v2/sample_data/sample_workbook.xlsx
-    MEALS_PATH     default: v2/sample_data/meals.xlsx
-    PGDATABASE     default: shawarma_classic
-    PGHOST, PGPORT, PGUSER, PGPASSWORD   read by psycopg2 directly
+Settings: WORKBOOK_PATH, MEALS_PATH, PGDATABASE (see settings.py), and
+PGHOST, PGPORT, PGUSER, PGPASSWORD, which psycopg2 reads by itself.
 """
 
-import os
 import sys
 
 import psycopg2
 
+from settings import DATABASE
 from validate_workbook import find_problems, print_problems, read_workbook
-
-DATABASE = os.getenv("PGDATABASE", "shawarma_classic")
 
 
 # --------------------------------------------------------------------------------------------------------

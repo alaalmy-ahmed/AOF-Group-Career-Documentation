@@ -3,7 +3,8 @@ Read the operations workbook and check it before loading.
 
 Every problem is listed with its sheet and Excel row, so the workbook can be
 fixed in one go. load_workbook.py runs these checks first and loads nothing
-if any fail.
+if any fail. distribute_issues.py runs a smaller set on one day's issues
+(find_day_problems).
 
 The checks run in three stages. A stage runs only if the one before it found
 nothing, because the later checks rely on the earlier ones (for example,
@@ -17,20 +18,15 @@ adding up Done Tasks needs every cell to be a number):
 Usage (no database needed):
     python v2/validate_workbook.py
 
-Settings (environment variables):
-    WORKBOOK_PATH  default: v2/sample_data/sample_workbook.xlsx
-    MEALS_PATH     default: v2/sample_data/meals.xlsx
+Settings: WORKBOOK_PATH and MEALS_PATH (see settings.py).
 """
 
-import os
 import sys
 from datetime import date
 
 import pandas as pd
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-WORKBOOK_PATH = os.getenv("WORKBOOK_PATH", os.path.join(HERE, "sample_data", "sample_workbook.xlsx"))
-MEALS_PATH = os.getenv("MEALS_PATH", os.path.join(HERE, "sample_data", "meals.xlsx"))
+from settings import MEALS_PATH, WORKBOOK_PATH
 
 # Columns the pipeline reads. Other columns (Team, Prepared By, Images, ...) are ignored.
 REQUIRED_COLUMNS = {
@@ -103,14 +99,13 @@ def check_columns(sheets):
 # --------------------------------------------------------------------------------------------------------
 # Stage 2: basics
 
-def check_blanks(sheets):
+def check_blanks(name, sheet):
+    """Blank cells in the columns of MUST_BE_FILLED, for one sheet (or some of its rows)."""
     problems = []
-    for name, columns in MUST_BE_FILLED.items():
-        sheet = sheets[name]
-        for column in columns:
-            for index in sheet.index[sheet[column].isna()]:
-                what = "blank or not a date" if column == "Date" else "blank"
-                problems.append(f"{name} row {excel_row(index)}: {column} is {what}")
+    for column in MUST_BE_FILLED[name]:
+        for index in sheet.index[sheet[column].isna()]:
+            what = "blank or not a date" if column == "Date" else "blank"
+            problems.append(f"{name} row {excel_row(index)}: {column} is {what}")
     return problems
 
 
@@ -186,13 +181,16 @@ def check_tasks(tasks, branches, meals):
     return problems
 
 
-def check_issues(issues, tasks, branches, managers, fixed_choices, meals):
+def check_issues(issues, branches, managers, fixed_choices, meals, tasks=None):
+    """Pass `tasks` (Source Data) to also check that each issue has its task.
+    The daily check leaves it out, because tasks may not be filled in yet."""
     problems = []
     meal_names = set(meals["Meal"].dropna())
     descriptions = set(fixed_choices["Issues"].dropna())
     branch_of_code = dict(zip(branches["Code"], branches["Branch"]))
     manager_of = dict(zip(managers["Branch"], managers["Manager"]))
-    scheduled = set(zip(tasks["Date"], tasks["Meal"], tasks["Due time"]))
+    if tasks is not None:
+        scheduled = set(zip(tasks["Date"], tasks["Meal"], tasks["Due time"]))
 
     for index, issue in issues.iterrows():
         where = f"Reviewing Reports row {excel_row(index)}"
@@ -204,7 +202,7 @@ def check_issues(issues, tasks, branches, managers, fixed_choices, meals):
 
         if issue["Meal"] not in meal_names:
             problems.append(f"{where}: meal {issue['Meal']!r} isn't in meals.xlsx")
-        elif (issue["Date"], issue["Meal"], issue["Due time"]) not in scheduled:
+        elif tasks is not None and (issue["Date"], issue["Meal"], issue["Due time"]) not in scheduled:
             problems.append(f"{where}: no task in Source Data for {issue['Date']} {issue['Meal']} {issue['Due time']}")
 
         if issue["Description"] not in descriptions:
@@ -230,8 +228,11 @@ def find_problems(sheets):
     if problems:
         return problems
 
+    problems = []
+    for name in MUST_BE_FILLED:
+        problems += check_blanks(name, sheets[name])
     tasks = sheets["Source Data"]
-    problems = check_blanks(sheets) + check_dates(sheets) + check_counts(tasks)
+    problems += check_dates(sheets) + check_counts(tasks)
     if problems:
         return problems
 
@@ -240,7 +241,29 @@ def find_problems(sheets):
     managers = sheets["Managers"]
     return (check_branch_lists(branches, managers)
             + check_tasks(tasks, branches, sheets["meals.xlsx"])
-            + check_issues(issues, tasks, branches, managers, sheets["Fixed Choices"], sheets["meals.xlsx"]))
+            + check_issues(issues, branches, managers, sheets["Fixed Choices"], sheets["meals.xlsx"], tasks))
+
+
+def find_day_problems(sheets, day):
+    """The checks for the daily distribution: only the issues logged on `day`,
+    and the branch and manager lists. Tasks aren't checked, so a morning run
+    isn't blocked when Source Data isn't filled in yet."""
+    problems = check_columns(sheets)
+    if problems:
+        return problems
+
+    issues = sheets["Reviewing Reports"]
+    day_issues = issues[issues["Date"] == day]
+    branches = sheets["branches and codes"]
+    managers = sheets["Managers"]
+    problems = (check_blanks("Reviewing Reports", day_issues)
+                + check_blanks("branches and codes", branches)
+                + check_blanks("Managers", managers))
+    if problems:
+        return problems
+
+    return (check_branch_lists(branches, managers)
+            + check_issues(day_issues, branches, managers, sheets["Fixed Choices"], sheets["meals.xlsx"]))
 
 
 def print_problems(problems):

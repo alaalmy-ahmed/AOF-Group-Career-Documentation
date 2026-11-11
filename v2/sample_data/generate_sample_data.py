@@ -5,11 +5,12 @@ needs from the data entry, and a separate meal list.
   - Reviewing Reports has a "Due time" column, so each issue points to one
     scheduled task. A meal can be due twice a day (Arabi Sop is here).
   - meals.xlsx is the fixed list of meals the database accepts.
+  - No managers.xlsx: v2 reads the managers from the workbook's Managers sheet.
 
 Everything here is made up: managers, branch codes, trainees, employee IDs
 and issues. The workbook mirrors the production file's sheets and columns, and
 stores the issue photos the same way Excel does for "Place in Cell" pictures
-(rich values), so the daily notebook's image extraction works on it unchanged.
+(rich values), so the daily distribution's photo extraction works on it unchanged.
 
 Usage:
     python v2/sample_data/generate_sample_data.py
@@ -17,7 +18,6 @@ Usage:
 Outputs (next to this script):
     sample_workbook.xlsx   Source Data, Reviewing Reports, branches and codes,
                            Managers, Fixed Choices
-    managers.xlsx          Wide format: one column per manager, branches below
     meals.xlsx             One column, Meal: the allowed meal names
 """
 
@@ -34,7 +34,6 @@ from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORKBOOK_PATH = os.path.join(HERE, "sample_workbook.xlsx")
-MANAGERS_PATH = os.path.join(HERE, "managers.xlsx")
 MEALS_PATH = os.path.join(HERE, "meals.xlsx")
 
 SEED = 7
@@ -285,10 +284,6 @@ def main():
     row_to_vm = {row: rng.randint(1, len(photos)) for row in range(2, len(issues_df) + 2)}
     add_in_cell_pictures(WORKBOOK_PATH, f"xl/worksheets/sheet{sheet_index}.xml", image_col, row_to_vm, photos)
 
-    # Wide managers file used by the daily notebook.
-    wide = pd.DataFrame({m: pd.Series(b) for m, b in MANAGERS.items()})
-    wide.to_excel(MANAGERS_PATH, index=False)
-
     # The meal list (each meal once, even if it's due twice a day).
     meals = list(dict.fromkeys(meal for meal, _ in MEALS))
     pd.DataFrame({"Meal": meals}).to_excel(MEALS_PATH, index=False)
@@ -296,7 +291,6 @@ def main():
     print(f"Wrote {WORKBOOK_PATH}")
     print(f"  {len(tasks_df)} task rows, {len(issues_df)} issues, {len(branches_df)} branches, "
           f"{len(MANAGERS)} managers, {len(photos)} photos, {tasks_df['Date'].min().date()} to {END_DATE}")
-    print(f"Wrote {MANAGERS_PATH}")
     print(f"Wrote {MEALS_PATH}: {len(meals)} meals")
 
 
