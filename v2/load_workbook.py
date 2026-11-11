@@ -1,6 +1,9 @@
 """
 Load the operations workbook into the v2 schema (v2/sql/001_schema.sql).
 
+The workbook is checked first (validate_workbook.py). If it has any problem,
+they're all listed and nothing is loaded.
+
 Safe to run more than once: rows already in the database are skipped, using
 the unique rules from the schema. Everything runs in one transaction, so a
 run that fails part-way changes nothing.
@@ -16,30 +19,17 @@ Settings (environment variables):
 """
 
 import os
+import sys
 
-import pandas as pd
 import psycopg2
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-WORKBOOK_PATH = os.getenv("WORKBOOK_PATH", os.path.join(HERE, "sample_data", "sample_workbook.xlsx"))
-MEALS_PATH = os.getenv("MEALS_PATH", os.path.join(HERE, "sample_data", "meals.xlsx"))
+from validate_workbook import find_problems, print_problems, read_workbook
+
 DATABASE = os.getenv("PGDATABASE", "shawarma_classic")
 
 
 # --------------------------------------------------------------------------------------------------------
-# Read and reshape the workbook
-
-def read_workbook():
-    tasks = pd.read_excel(WORKBOOK_PATH, sheet_name="Source Data")
-    issues = pd.read_excel(WORKBOOK_PATH, sheet_name="Reviewing Reports")
-    branches = pd.read_excel(WORKBOOK_PATH, sheet_name="branches and codes")
-    managers = pd.read_excel(WORKBOOK_PATH, sheet_name="Managers")
-    meals = pd.read_excel(MEALS_PATH)
-
-    tasks["Date"] = pd.to_datetime(tasks["Date"]).dt.date
-    issues["Date"] = pd.to_datetime(issues["Date"]).dt.date
-    return tasks, issues, branches, managers, meals
-
+# Reshape the workbook
 
 def reshape_tasks(tasks):
     """One row per (date, meal, due time). Teams are added together, and their
@@ -64,20 +54,12 @@ def split_misses(tasks):
 
 def lookup(mapping, keys, what):
     """Translate each key through mapping, or stop with a clear message
-    listing every key that isn't there."""
+    listing every key that isn't there. validate_workbook.py should have
+    caught any unknown value already; this is a last safety net."""
     unknown = sorted({key for key in keys if key not in mapping}, key=str)
     if unknown:
         raise ValueError(f"Unknown {what}: {unknown}")
     return [mapping[key] for key in keys]
-
-
-def check_no_duplicate_issues(issues):
-    """The database would quietly skip a repeated issue, so a typo that logs
-    one twice in the workbook is caught here instead."""
-    key = ["Date", "Code", "Meal", "Due time", "Description"]
-    repeated = issues[issues.duplicated(key, keep=False)]
-    if not repeated.empty:
-        raise ValueError(f"Issues logged twice in the workbook:\n{repeated[key]}")
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -154,9 +136,18 @@ def load(cur, tasks, issues, branches, managers, meals):
 
 
 def main():
-    tasks, issues, branches, managers, meals = read_workbook()
-    tasks = reshape_tasks(tasks)
-    check_no_duplicate_issues(issues)
+    sheets = read_workbook()
+    problems = find_problems(sheets)
+    if problems:
+        print_problems(problems)
+        print("Nothing was loaded.")
+        sys.exit(1)
+
+    tasks = reshape_tasks(sheets["Source Data"])
+    issues = sheets["Reviewing Reports"]
+    branches = sheets["branches and codes"]
+    managers = sheets["Managers"]
+    meals = sheets["meals.xlsx"]
 
     conn = psycopg2.connect(dbname=DATABASE)
     try:

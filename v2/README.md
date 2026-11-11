@@ -6,7 +6,7 @@ The original system (v1) is at the top of this repository, unchanged; git tag `v
 |---|---|---|
 | 1. Keys and constraints | Done | A normalised schema the database itself keeps clean: [sql/001_schema.sql](sql/001_schema.sql) |
 | 2. Safe re-runnable loads | Done | [load_workbook.py](load_workbook.py) loads the workbook into the schema; a re-run adds nothing twice |
-| 3. Validation before loading | Planned | |
+| 3. Validation before loading | Done | [validate_workbook.py](validate_workbook.py) checks the workbook and lists every problem; the load runs it first |
 | 4. Notebooks → Python modules | Planned | |
 | 5. Tests | Planned | |
 | 6. Scheduling and alerts | Planned | |
@@ -63,3 +63,38 @@ Everything runs in one transaction: if any step fails, nothing from that run is 
 
 - **Reviewing Reports:** a new `Due time` column, next to `Meal`.
 - **meals.xlsx:** a new file listing the meals, one per row.
+
+## Step 3: checking the workbook before loading
+
+```bash
+python v2/validate_workbook.py
+```
+
+It needs no database, so it can be run before handing the workbook over. `load_workbook.py` runs the same checks first: if there's any problem, it lists them all and loads nothing. Each problem names the sheet and the Excel row, for example:
+
+```
+Source Data row 5: missed branch 'Al Olayaa' isn't in 'branches and codes'
+Reviewing Reports row 4: manager is 'Dammam Manager', but 'Managers' says 'Jeddah North Manager' for this branch
+```
+
+The checks run in three stages. A stage runs only if the previous one passed, because later checks rely on earlier ones (adding up Done Tasks needs every cell to be a number).
+
+| Stage | Checks |
+|---|---|
+| 1. Columns | Every sheet has the columns the pipeline reads |
+| 2. Basics | No blank required cells; dates are real dates and not in the future; Done Tasks and Missed Tasks are whole numbers ≥ 0 |
+| 3. Rules | See below |
+
+Rules checked in stage 3:
+
+- **Every branch does every meal:** for each task (date, meal, due time), submitted + missed = the number of branches in *branches and codes*.
+- **Missed Tasks matches the names:** the count equals the branch names listed in *Branches Missed Tasks*.
+- **Names are known:** branches, meals, codes and descriptions are in their lists (*branches and codes*, `meals.xlsx`, *Fixed Choices*).
+- **Code matches Branch** on each issue, so a wrong code can't blame the wrong branch.
+- **Manager matches** the *Managers* sheet for that branch. The workbook is loaded before each rotation, so a mismatch is a typo.
+- **Each issue has its task** in *Source Data* (same date, meal and due time).
+- **No issue is logged twice**, and each branch is listed once and has one manager.
+
+Before checking, spaces at the start and end of text are removed (so `"Al Olaya "` matches `"Al Olaya"`), and fully empty rows are skipped.
+
+When checks fail, the script exits with code 1, so a scheduler (step 6) can tell the run failed.
