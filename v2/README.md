@@ -8,7 +8,7 @@ The original system (v1) is at the top of this repository, unchanged; git tag `v
 | 2. Safe re-runnable loads | Done | [load_workbook.py](load_workbook.py) loads the workbook into the schema; a re-run adds nothing twice |
 | 3. Validation before loading | Done | [validate_workbook.py](validate_workbook.py) checks the workbook and lists every problem; the load runs it first |
 | 4. Notebooks → Python modules | Done | The daily distribution and the weekly ranking are scripts; all settings are in [settings.py](settings.py) |
-| 5. Tests | Planned | |
+| 5. Tests | Done | 38 pytest tests in [tests/](tests): checks, ranking math, daily files, load |
 | 6. Scheduling and alerts | Planned | |
 | 7. dbt models | Planned | |
 | 8. Replacing the Excel intake | Planned | |
@@ -28,6 +28,8 @@ psql -U postgres -d shawarma_classic -f v2/sql/001_schema.sql   # once
 | Weekly, after the load | `python v2/weekly_ranking.py` | Branch and manager ranking for the 7 days ending yesterday |
 
 On the sample data, add `REPORT_DATE=2026-10-26` (its last day) in front of the daily and ranking commands.
+
+To run the tests: `pytest v2` (see step 5).
 
 ## Step 1: the schema
 
@@ -144,3 +146,26 @@ Each file imports what it needs from the others (for example, `from settings imp
 - **Weekly ranking:** v1's ranking cell was run on the same tasks, with both due times kept. It matches row for row for two weeks, except one manager whose average is exactly 94.05: it rounds to 94.1 in v1 and 94.0 in v2, with the same rank. This is the same float tie noted in [metrics.md](../docs/metrics.md).
 
 **Still the same as v1:** the ranking uses each branch's *current* manager, the score method ([metrics.md](../docs/metrics.md)), the two output files, and the format of the daily files.
+
+## Step 5: tests
+
+```bash
+pytest v2                                                     # 35 tests, no database needed
+createdb shawarma_classic_test                                # once
+TEST_PGDATABASE=shawarma_classic_test pytest v2               # all 38, including the database tests
+```
+
+A test runs a piece of the pipeline on input where the right answer is known, and fails if the answer changes. Run them after every change: if something breaks, a test names it before it reaches the reports.
+
+| File | What it tests | Data |
+|---|---|---|
+| [test_validate_workbook.py](tests/test_validate_workbook.py) | Every check: a clean workbook passes, each mistake gives its exact message and Excel row, later stages wait for earlier ones, the daily check ignores tasks and other days | A tiny workbook (3 branches, 2 tasks, 1 issue), with one thing broken per test |
+| [test_weekly_ranking.py](tests/test_weekly_ranking.py) | Done rates, scores, ranks, grades, ties, a week with no issues | A tiny week worked out on paper at the top of the file |
+| [test_distribute_issues.py](tests/test_distribute_issues.py) | One file per branch in its manager's folder, the right rows, each photo on its own row and the same picture as in the workbook; a mistake writes nothing | The sample workbook (the only one with in-cell photos) |
+| [test_database.py](tests/test_database.py) | A second load adds nothing, a failed load saves nothing, the ranking's counts match the workbook | The sample workbook, in a test database |
+
+The tiny workbook is built in [conftest.py](tests/conftest.py), a file pytest loads by itself. Each test gets a fresh copy.
+
+The database tests are skipped unless `TEST_PGDATABASE` is set. The name must contain `test`, because the tests drop and recreate the `ops` schema before each one.
+
+**Checked by planting bugs:** passing tests only matter if they fail when the code is wrong. Eight bugs were planted one at a time (v1's grouping without due time, no transaction, spaces not removed, Excel rows off by one, Missed Tasks not checked, a changed score weight, ties not skipping a rank, a photo one row too low). Each one made at least one test fail.
