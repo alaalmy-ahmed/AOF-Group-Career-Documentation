@@ -8,8 +8,8 @@ The original system (v1) is at the top of this repository, unchanged; git tag `v
 | 2. Safe re-runnable loads | Done | [load_workbook.py](load_workbook.py) loads the workbook into the schema; a re-run adds nothing twice |
 | 3. Validation before loading | Done | [validate_workbook.py](validate_workbook.py) checks the workbook and lists every problem; the load runs it first |
 | 4. Notebooks → Python modules | Done | The daily distribution and the weekly ranking are scripts; all settings are in [settings.py](settings.py) |
-| 5. Tests | Done | 38 pytest tests in [tests/](tests): checks, ranking math, daily files, load |
-| 6. Scheduling and alerts | Planned | |
+| 5. Tests | Done | 49 pytest tests in [tests/](tests): checks, ranking math, daily files, load, schedule |
+| 6. Scheduling and alerts | Done | Airflow runs the scripts on a schedule and emails the result of each step: [dags/pipeline_dags.py](dags/pipeline_dags.py) |
 | 7. dbt models | Planned | |
 | 8. Replacing the Excel intake | Planned | |
 
@@ -29,7 +29,7 @@ psql -U postgres -d shawarma_classic -f v2/sql/001_schema.sql   # once
 
 On the sample data, add `REPORT_DATE=2026-10-26` (its last day) in front of the daily and ranking commands.
 
-To run the tests: `pytest v2` (see step 5).
+To run the tests: `pytest v2` (see step 5). To have Airflow run the scripts on a schedule, see step 6.
 
 ## Step 1: the schema
 
@@ -150,9 +150,9 @@ Each file imports what it needs from the others (for example, `from settings imp
 ## Step 5: tests
 
 ```bash
-pytest v2                                                     # 35 tests, no database needed
+pytest v2                                                     # no database needed
 createdb shawarma_classic_test                                # once
-TEST_PGDATABASE=shawarma_classic_test pytest v2               # all 38, including the database tests
+TEST_PGDATABASE=shawarma_classic_test pytest v2               # all 49, including the database tests
 ```
 
 A test runs a piece of the pipeline on input where the right answer is known, and fails if the answer changes. Run them after every change: if something breaks, a test names it before it reaches the reports.
@@ -169,3 +169,86 @@ The tiny workbook is built in [conftest.py](tests/conftest.py), a file pytest lo
 The database tests are skipped unless `TEST_PGDATABASE` is set. The name must contain `test`, because the tests drop and recreate the `ops` schema before each one.
 
 **Checked by planting bugs:** passing tests only matter if they fail when the code is wrong. Eight bugs were planted one at a time (v1's grouping without due time, no transaction, spaces not removed, Excel rows off by one, Missed Tasks not checked, a changed score weight, ties not skipping a rank, a photo one row too low). Each one made at least one test fail.
+
+## Step 6: scheduling and alerts
+
+[Airflow](https://airflow.apache.org/) runs the scripts on a schedule, and emails the result of every step.
+
+| DAG | When (Riyadh time) | Steps, in order | Report date |
+|---|---|---|---|
+| `daily_issues` | Every day, 11:59 pm | `distribute_issues.py` | That day |
+| `weekly_ranking` | Wednesdays, 9:00 am | `load_workbook.py`, then `weekly_ranking.py` | The day before, so the ranking covers last Wednesday to Tuesday |
+
+A DAG is Airflow's word for a list of steps (tasks), the order they run in, and when.
+
+| File | Job |
+|---|---|
+| [dags/pipeline_dags.py](dags/pipeline_dags.py) | The two DAGs |
+| [alerts.py](alerts.py) | Sends the emails |
+| [start_airflow.sh](start_airflow.sh) | Starts Airflow |
+| [airflow.env.example](airflow.env.example) | Template for your paths, database password and email settings |
+
+### Setting it up (once)
+
+Airflow isn't in `requirements.txt`: it pins exact versions of hundreds of packages, so it's installed with its constraints file, the list of versions tested together. Use your Python version (`python3 --version`) in the link; this example is for 3.14:
+
+```bash
+pip install "apache-airflow==3.4.0" --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.4.0/constraints-3.14.txt
+```
+
+Copy `airflow.env.example` to `airflow.env` (same folder) and fill it in. `airflow.env` is in `.gitignore`. The email password is a Gmail **app password**, made at <https://myaccount.google.com/apppasswords> once 2-Step Verification is on, not the account's normal password. To check the email settings, send yourself a test email:
+
+```bash
+source v2/airflow.env && cd v2 && python -c "from alerts import send_email; send_email('Test', 'It works')"
+```
+
+### Running it
+
+```bash
+v2/start_airflow.sh
+```
+
+Leave that terminal open. Open <http://localhost:8080> and log in as `admin` with the password printed in the terminal. Both DAGs start paused: switch each one on with its toggle.
+
+### How it works
+
+- **Each task runs a script as you would in a terminal**, for example `REPORT_DATE=2026-11-12 python distribute_issues.py`. The script's exit code decides the result: 0 is success, 1 is failure (steps 3 and 4).
+- **Each run knows which day it's for.** Airflow stamps every run with its scheduled time, and the task turns that into `REPORT_DATE`, in Riyadh time whatever the Mac's clock is set to. So re-running an old run redoes that day, not today. A run started by hand (the ▶ button) uses the time it's started.
+- **Missed days are made up.** If Airflow wasn't running at a scheduled time (the Mac was off), it runs each missed day when it's back, oldest first, one at a time. It counts from `SCHEDULE_START_DATE` in `airflow.env`: set it to the day you switch the schedule on.
+- **The ranking waits for the load** (`load >> ranking`). If the load fails, the ranking is skipped.
+- **An email after every step:** `OK` with what the script printed, or `FAILED` with the error. That's one email a day, and two more on Wednesdays. If none arrives, Airflow isn't running.
+- **No automatic retries:** a mistake in the workbook won't fix itself. Fix it, then click *Clear* on the failed run in Airflow to run it again for its own day.
+
+A failure email looks like this:
+
+```
+Subject: FAILED: daily_issues / distribute_issues
+
+distribute_issues.py stopped with exit code 1.
+
+Report date: 2026-10-25
+
+The workbook has 1 problem(s):
+  - Reviewing Reports row 79: manager is 'Nobody', but 'Managers' says 'West Riyadh Manager' for this branch
+No files were written.
+```
+
+### What changed from v1, and why
+
+| v1 | v2 | Why |
+|---|---|---|
+| The notebooks are started by hand | Airflow starts them on schedule | Nothing depends on someone remembering |
+| A failure is seen only by whoever ran the notebook | An email after every step, with the error | You hear about a problem even when you're away from the Mac |
+| A day nobody ran is simply missing | Missed days are made up, each with its own date | Every day still gets its files, every week its load |
+| The load and the ranking are cells in one notebook | Two tasks; the ranking runs only if the load succeeded | A ranking is never built on a load that failed |
+
+### Tested
+
+- **The real Airflow scheduler**, on the sample data, with a local test mail server in place of Gmail and `SCHEDULE_START_DATE=2026-10-24`. When switched on, it made up 19 daily runs (Oct 24 to Nov 11), each with its own report date. It also ran 3 weekly runs, at 9:00 am Riyadh time on Wednesdays, each covering Wednesday to Tuesday: the 2 weeks after the sample's last day failed with *No tasks in the database*. 25 emails, each with the right subject and content.
+- **A workbook with one wrong manager** on Oct 25: re-running Oct 25 failed, and the email gave the row (above). The weekly load failed the same way, and the ranking was skipped with no email.
+- **Tests:** [test_alerts.py](tests/test_alerts.py) checks the email without sending one. [test_dags.py](tests/test_dags.py) checks the schedules, the task order, the report date of each run (including a run just after midnight in Riyadh, when it's still the day before in UTC), and the emails. It also runs the real daily script once. `test_dags.py` is skipped when Airflow isn't installed. Nine bugs were planted in the new code (wrong week end, UTC day, ranking not waiting for the load, missed days not made up, a failed script not failing the task, and others), and each one made a test fail.
+
+**Known limits:**
+- Airflow runs only while its terminal is open and the Mac is awake. Missed runs are made up later, so files can arrive late. Starting it automatically at login is a possible next step.
+- The weekly load checks the whole workbook at 9 am on Wednesday. If that Wednesday's rows are already half entered by then (for example an issue whose task isn't in *Source Data* yet), the check fails and nothing is loaded. Finish them, then *Clear* the run.
+- `airflow standalone` keeps Airflow's own records in a single file (SQLite), which is fine for one machine. An always-on server would run Airflow as services with PostgreSQL for its records.

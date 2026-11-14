@@ -26,3 +26,17 @@ OUTPUT_DIR = os.getenv("OUTPUT_DIR", os.path.join(HERE, "output"))
 # ranking covers the 7 days ending on it. Default: yesterday, because
 # today's data is still coming in. Example: REPORT_DATE=2026-10-26
 REPORT_DATE = date.fromisoformat(os.getenv("REPORT_DATE") or str(date.today() - timedelta(days=1)))
+
+# The schedule (step 6) makes up every scheduled run from this day on. Set
+# it to the day you switch the schedule on, so it doesn't redo days that
+# were handled by hand.
+SCHEDULE_START_DATE = date.fromisoformat(os.getenv("SCHEDULE_START_DATE", "2026-11-12"))
+
+# Alert emails from the scheduled runs (step 6). The password is a Gmail
+# app password, not the account's normal password. Several addresses in
+# ALERT_EMAIL_TO are separated by commas.
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+ALERT_EMAIL_FROM = os.getenv("ALERT_EMAIL_FROM")
+ALERT_EMAIL_PASSWORD = os.getenv("ALERT_EMAIL_PASSWORD")
+ALERT_EMAIL_TO = os.getenv("ALERT_EMAIL_TO")
