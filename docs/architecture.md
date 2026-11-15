@@ -98,6 +98,6 @@ Column types, a diagram and example queries are in [database.md](database.md).
 
 ## Next steps
 
-- Schedule the daily and weekly notebooks (Task Scheduler, cron or Airflow).
-- Move database credentials out of the notebooks into environment variables.
-- Convert the notebooks into scripts or dbt models with tests.
+- Schedule the daily and weekly notebooks (Task Scheduler, cron or Airflow). *Done in v2: [step 6](../v2/README.md#step-6-scheduling-and-alerts).*
+- Move database credentials out of the notebooks into environment variables. *Done in v2: every setting comes from an environment variable ([step 4](../v2/README.md#step-4-notebooks--python-modules)).*
+- Convert the notebooks into scripts or dbt models with tests. *Done in v2: scripts ([step 4](../v2/README.md#step-4-notebooks--python-modules)), tests ([step 5](../v2/README.md#step-5-tests)), dbt models ([step 7](../v2/README.md#step-7-dbt-models)).*

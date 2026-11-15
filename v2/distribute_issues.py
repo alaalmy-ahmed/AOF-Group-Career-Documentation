@@ -5,14 +5,16 @@ This is v1's notebook 01 as a script.
 
     output/managers/<Manager>/<Branch>.xlsx
 
-That day's issues are checked first (validate_workbook.find_day_problems).
-If any check fails, the problems are listed and no files are written.
+The issues and photos come from that day's file in the intake folder
+(step 8). If there's no file for the day, it stops with a message. That
+day's issues are checked first (validate_workbook.find_day_problems). If any
+check fails, the problems are listed and no files are written.
 
 Usage:
     python v2/distribute_issues.py
     REPORT_DATE=2026-10-26 python v2/distribute_issues.py     # the sample data's last day
 
-Settings: WORKBOOK_PATH, MEALS_PATH, OUTPUT_DIR, REPORT_DATE (see settings.py).
+Settings: INTAKE_DIR, WORKBOOK_PATH, MEALS_PATH, OUTPUT_DIR, REPORT_DATE (see settings.py).
 """
 
 import os
@@ -28,8 +30,8 @@ from openpyxl.drawing.image import Image
 from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.utils import get_column_letter
 
-from settings import OUTPUT_DIR, REPORT_DATE, WORKBOOK_PATH
-from validate_workbook import excel_row, find_day_problems, print_problems, read_workbook
+from settings import INTAKE_DIR, OUTPUT_DIR, REPORT_DATE
+from validate_workbook import days_in, excel_row, find_day_problems, name_problems, print_problems, read_intake
 
 SHEET = "Reviewing Reports"
 PHOTO_COLUMN = "Images"
@@ -141,10 +143,20 @@ def write_branch_file(path, rows, photos):
 # --------------------------------------------------------------------------------------------------------
 
 def main():
-    sheets = read_workbook()
+    # The day's file: a day without one means the file hasn't been dropped in yet
+    day_files = [(name, path, sheets) for name, path, sheets in read_intake() if REPORT_DATE in days_in(sheets)]
+    if not day_files:
+        print(f"No file for {REPORT_DATE} in the intake folder ({INTAKE_DIR}). No files were written.")
+        sys.exit(1)
+    if len(day_files) > 1:
+        print(f"{REPORT_DATE} is in more than one file: {', '.join(name for name, _, _ in day_files)}. "
+              f"No files were written.")
+        sys.exit(1)
+    name, path, sheets = day_files[0]
+
     problems = find_day_problems(sheets, REPORT_DATE)
     if problems:
-        print_problems(problems)
+        print_problems(name_problems(name, problems))
         print("No files were written.")
         sys.exit(1)
 
@@ -154,13 +166,13 @@ def main():
         print(f"No issues on {REPORT_DATE}. Nothing to write.")
         return
 
-    photos = read_photos(WORKBOOK_PATH, SHEET)
-    # The checks made sure each issue's Manager matches the Managers sheet,
-    # so the Manager column decides the folder.
+    photos = read_photos(path, SHEET)
+    # The checks made sure each issue's Manager matches that month's row in
+    # the Managers sheet, so the Manager column decides the folder.
     for (manager, branch), rows in day_issues.groupby(["Manager", "Branch"]):
         folder = os.path.join(OUTPUT_DIR, "managers", manager)
         os.makedirs(folder, exist_ok=True)
-        # The row's position in this file -> its photo, found by its row in the workbook
+        # The row's position in this file -> its photo, found by its row in the day's file
         branch_photos = {position: photos[excel_row(index)]
                          for position, index in enumerate(rows.index) if excel_row(index) in photos}
         write_branch_file(os.path.join(folder, f"{branch}.xlsx"), rows, branch_photos)

@@ -1,10 +1,15 @@
 """
-Read the operations workbook and check it before loading.
+Read the daily files in the intake folder (step 8) and the lists, and check
+them before loading.
 
-Every problem is listed with its sheet and Excel row, so the workbook can be
-fixed in one go. load_workbook.py runs these checks first and loads nothing
+Every problem is listed with its file, sheet and Excel row, so everything can
+be fixed in one go. load_workbook.py runs these checks first and loads nothing
 if any fail. distribute_issues.py runs a smaller set on one day's issues
 (find_day_problems).
+
+Each daily file is checked together with the lists (branches and codes,
+Managers, Fixed Choices, meals.xlsx), as if it were one workbook. A day in
+more than one file is reported too.
 
 The checks run in three stages. A stage runs only if the one before it found
 nothing, because the later checks rely on the earlier ones (for example,
@@ -18,15 +23,19 @@ adding up Done Tasks needs every cell to be a number):
 Usage (no database needed):
     python v2/validate_workbook.py
 
-Settings: WORKBOOK_PATH and MEALS_PATH (see settings.py).
+Settings: INTAKE_DIR, WORKBOOK_PATH and MEALS_PATH (see settings.py).
 """
 
+import os
 import sys
 from datetime import date
 
 import pandas as pd
 
-from settings import MEALS_PATH, WORKBOOK_PATH
+from settings import INTAKE_DIR, MEALS_PATH, WORKBOOK_PATH
+
+LIST_SHEETS = ["branches and codes", "Managers", "Fixed Choices"]     # in the workbook (WORKBOOK_PATH)
+DAY_SHEETS = ["Source Data", "Reviewing Reports"]                     # in each daily file
 
 # Columns the pipeline reads. Other columns (Team, Prepared By, Images, ...) are ignored.
 REQUIRED_COLUMNS = {
@@ -52,27 +61,64 @@ MUST_BE_FILLED = {
 # --------------------------------------------------------------------------------------------------------
 # Read the workbook
 
-def read_workbook():
-    """Return every sheet the pipeline uses, as {sheet name: table}."""
-    sheets = {}
-    for name in ["Source Data", "Reviewing Reports", "branches and codes", "Managers", "Fixed Choices"]:
-        sheets[name] = pd.read_excel(WORKBOOK_PATH, sheet_name=name)
-    sheets["meals.xlsx"] = pd.read_excel(MEALS_PATH)
+def clean(sheet):
+    # Drop rows that are completely empty. Row numbers (the index) are kept,
+    # so messages still point at the right Excel row.
+    sheet = sheet.dropna(how="all")
+    # Remove spaces at the start and end of text, so "Al Olaya " matches "Al Olaya".
+    return sheet.map(lambda value: value.strip() if isinstance(value, str) else value)
 
-    for name, sheet in sheets.items():
-        # Drop rows that are completely empty. Row numbers (the index) are
-        # kept, so messages still point at the right Excel row.
-        sheet = sheet.dropna(how="all")
-        # Remove spaces at the start and end of text, so "Al Olaya " matches "Al Olaya".
-        sheets[name] = sheet.map(lambda value: value.strip() if isinstance(value, str) else value)
 
-    # Anything that isn't a date becomes blank, and the blank check reports it.
-    for name in ["Source Data", "Reviewing Reports"]:
-        sheets[name]["Date"] = to_dates(sheets[name]["Date"])
+def read_lists():
+    """The lists you maintain: three sheets of the workbook, and meals.xlsx."""
+    sheets = {name: clean(pd.read_excel(WORKBOOK_PATH, sheet_name=name)) for name in LIST_SHEETS}
+    sheets["meals.xlsx"] = clean(pd.read_excel(MEALS_PATH))
     # Managers: any day in the month works (e.g. 2026-10-01 or Oct 2026); it's
-    # turned into the month's first day.
-    sheets["Managers"]["Month"] = to_dates(sheets["Managers"]["Month"]).map(month_of)
+    # turned into the month's first day. Anything else becomes blank, and the
+    # blank check reports it.
+    if "Month" in sheets["Managers"]:
+        sheets["Managers"]["Month"] = to_dates(sheets["Managers"]["Month"]).map(month_of)
     return sheets
+
+
+def read_day_file(path):
+    """One daily file's Source Data and Reviewing Reports. A missing sheet is
+    left out, and the column check reports it."""
+    found = pd.ExcelFile(path).sheet_names
+    sheets = {}
+    for name in DAY_SHEETS:
+        if name in found:
+            sheets[name] = clean(pd.read_excel(path, sheet_name=name))
+            if "Date" in sheets[name]:
+                # Anything that isn't a date becomes blank, and the blank check reports it.
+                sheets[name]["Date"] = to_dates(sheets[name]["Date"])
+    return sheets
+
+
+def intake_files():
+    """The daily files in the intake folder, by name. Skips Excel's lock files
+    (~$...) and the hidden ._ files macOS leaves on some drives."""
+    if not os.path.isdir(INTAKE_DIR):
+        return []
+    names = [name for name in os.listdir(INTAKE_DIR)
+             if name.endswith(".xlsx") and not name.startswith(("~$", "."))]
+    return [os.path.join(INTAKE_DIR, name) for name in sorted(names)]
+
+
+def read_intake():
+    """Every daily file, each with the lists added, so it can be checked like
+    one workbook: a list of (file name, path, {sheet name: table})."""
+    lists = read_lists()
+    return [(os.path.basename(path), path, {**lists, **read_day_file(path)}) for path in intake_files()]
+
+
+def days_in(sheets):
+    """Every date in a daily file's tasks and issues."""
+    days = set()
+    for name in DAY_SHEETS:
+        if name in sheets and "Date" in sheets[name]:
+            days |= set(sheets[name]["Date"].dropna())
+    return days
 
 
 def to_dates(column):
@@ -102,6 +148,9 @@ def split_names(cell):
 def check_columns(sheets):
     problems = []
     for name, columns in REQUIRED_COLUMNS.items():
+        if name not in sheets:
+            problems.append(f"no sheet named {name!r}")
+            continue
         missing = [column for column in columns if column not in sheets[name].columns]
         if missing:
             problems.append(f"{name}: missing column(s) {missing}")
@@ -273,8 +322,8 @@ def find_problems(sheets):
 
 def find_day_problems(sheets, day):
     """The checks for the daily distribution: only the issues logged on `day`,
-    and the branch and manager lists. Tasks aren't checked, so a morning run
-    isn't blocked when Source Data isn't filled in yet."""
+    and the branch and manager lists. Tasks aren't checked here; the weekly
+    load checks them."""
     problems = check_columns(sheets)
     if problems:
         return problems
@@ -295,18 +344,51 @@ def find_day_problems(sheets, day):
             + check_issues(day_issues, branches, managers, sheets["Fixed Choices"], sheets["meals.xlsx"]))
 
 
+def name_problems(name, problems):
+    """Start each problem in a daily file's own sheets with the file's name.
+    Problems in the lists (branches and codes, Managers, ...) are left as they are."""
+    in_day_sheets = tuple(DAY_SHEETS) + tuple(f"no sheet named {sheet!r}" for sheet in DAY_SHEETS)
+    return [f"{name}: {problem}" if problem.startswith(in_day_sheets) else problem for problem in problems]
+
+
+def find_intake_problems(files):
+    """Every problem in every daily file (from read_intake), each starting with
+    its file name, plus the problems between files."""
+    if not files:
+        return [f"No daily files in the intake folder ({INTAKE_DIR})"]
+
+    problems = []
+    files_of_day = {}
+    for name, _, sheets in files:
+        if "Source Data" in sheets and sheets["Source Data"].empty:
+            problems.append(f"{name}: no tasks in Source Data")
+        for problem in name_problems(name, find_problems(sheets)):
+            if problem not in problems:     # a problem in the lists comes with every file: list it once
+                problems.append(problem)
+        for day in days_in(sheets):
+            files_of_day.setdefault(day, []).append(name)
+
+    # One file per day: a second file for the same day (e.g. a corrected
+    # resend next to the first one) would load that day twice.
+    for day, names in sorted(files_of_day.items()):
+        if len(names) > 1:
+            problems.append(f"{day} is in more than one file: {', '.join(names)}")
+    return problems
+
+
 def print_problems(problems):
-    print(f"The workbook has {len(problems)} problem(s):")
+    print(f"Found {len(problems)} problem(s):")
     for problem in problems:
         print(f"  - {problem}")
 
 
 def main():
-    problems = find_problems(read_workbook())
+    files = read_intake()
+    problems = find_intake_problems(files)
     if problems:
         print_problems(problems)
         sys.exit(1)     # A non-zero exit tells a scheduler (e.g. Airflow) that the run failed
-    print("No problems found.")
+    print(f"No problems found in {len(files)} daily file(s).")
 
 
 if __name__ == "__main__":

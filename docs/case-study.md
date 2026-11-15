@@ -71,10 +71,10 @@ I was there when Lubda launched, so it never went through screenshots and Word f
 
 ## What I'd do next
 
-- Schedule the daily and weekly notebooks, with logging and failure alerts.
-- Add keys and constraints to the database, and make the load safe to re-run after a failure.
-- Move transformations into dbt models, with tests.
-- Replace the Excel intake as volume grows: the Lubda workbook is already over 2 GB.
+- Schedule the daily and weekly notebooks, with logging and failure alerts. *Done in v2: [step 6](../v2/README.md#step-6-scheduling-and-alerts).*
+- Add keys and constraints to the database, and make the load safe to re-run after a failure. *Done in v2: [step 1](../v2/README.md#step-1-the-schema) and [step 2](../v2/README.md#step-2-the-load).*
+- Move transformations into dbt models, with tests. *Done in v2: [step 7](../v2/README.md#step-7-dbt-models).*
+- Replace the Excel intake as volume grows: the Lubda workbook is already over 2 GB. *Done in v2: [step 8](../v2/README.md#step-8-the-intake-folder).*
 
 ## Skills shown
 

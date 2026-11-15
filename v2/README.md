@@ -8,10 +8,10 @@ The original system (v1) is at the top of this repository, unchanged; git tag `v
 | 2. Safe re-runnable loads | Done | [load_workbook.py](load_workbook.py) loads the workbook into the schema; a re-run adds nothing twice |
 | 3. Validation before loading | Done | [validate_workbook.py](validate_workbook.py) checks the workbook and lists every problem; the load runs it first |
 | 4. Notebooks → Python modules | Done | The daily distribution and the weekly ranking are scripts; all settings are in [settings.py](settings.py) |
-| 5. Tests | Done | 56 pytest tests in [tests/](tests): checks, daily files, load, dbt build, schedule |
+| 5. Tests | Done | 70 pytest tests in [tests/](tests): checks, intake folder, daily files, load, dbt build, schedule |
 | 6. Scheduling and alerts | Done | Airflow runs the scripts on a schedule and emails the result of each step: [dags/pipeline_dags.py](dags/pipeline_dags.py) |
 | 7. dbt models | Done | Reporting views built and tested by dbt: daily branch KPIs, weekly and monthly rankings, in [dbt/](dbt) |
-| 8. Replacing the Excel intake | Planned | |
+| 8. Replacing the Excel intake | Done | The entry person's daily files go into an intake folder and are read from there; only the last 10 days are kept |
 
 ## Running v2
 
@@ -22,11 +22,13 @@ psql -U postgres -d shawarma_classic -f v2/sql/001_schema.sql   # once
 
 dbt goes in its own environment; see step 7.
 
+Each day, drop the entry person's daily file into the intake folder (`INTAKE_DIR`, step 8). The lists (branches and codes, Managers, Fixed Choices) stay in the workbook (`WORKBOOK_PATH`).
+
 | When | Command | What it does |
 |---|---|---|
-| Any time | `python v2/validate_workbook.py` | Checks the workbook; no database needed |
-| Daily | `python v2/distribute_issues.py` | Yesterday's issues → one file per branch, in a folder per manager |
-| Weekly | `python v2/load_workbook.py` | Checks the workbook, then loads it into the database |
+| Any time | `python v2/validate_workbook.py` | Checks every daily file with the lists; no database needed |
+| Daily | `python v2/distribute_issues.py` | Yesterday's issues, from that day's file → one file per branch, in a folder per manager |
+| Weekly | `python v2/load_workbook.py` | Checks every daily file, loads them into the database, then deletes files older than `KEEP_DAYS` days |
 | Weekly, after the load | `python v2/build_models.py` | dbt builds the reporting views and runs their checks |
 | Weekly, after dbt | `python v2/weekly_ranking.py` | Branch and manager ranking for the last Wednesday–Tuesday week, to Excel |
 
@@ -133,7 +135,7 @@ v1 ran as two notebooks. v2 is a set of small `.py` files, each with one job, wh
 | [validate_workbook.py](validate_workbook.py) | Read the workbook and check it | (step 3) |
 | [load_workbook.py](load_workbook.py) | Load it into the database | Notebook 02, Step 2 (step 2) |
 | [distribute_issues.py](distribute_issues.py) | Daily per-manager, per-branch files with photos | Notebook 01 |
-| [weekly_ranking.py](weekly_ranking.py) | Weekly branch and manager ranking | Notebook 02, Step 3 |
+| [weekly_ranking.py](weekly_ranking.py) | Weekly branch and manager ranking, to Excel (the maths moved to dbt in step 7) | Notebook 02, Step 3 |
 
 Each file imports what it needs from the others (for example, `from settings import REPORT_DATE`), so nothing is copied between them.
 
@@ -158,7 +160,8 @@ Each file imports what it needs from the others (for example, `from settings imp
 ```bash
 pytest v2                                                     # no database needed
 createdb shawarma_classic_test                                # once
-TEST_PGDATABASE=shawarma_classic_test pytest v2               # all 56, including the database tests
+TEST_PGDATABASE=shawarma_classic_test pytest v2               # adds the database tests
+TEST_PGDATABASE=shawarma_classic_test DBT_EXECUTABLE=~/dbt-venv/bin/dbt pytest v2   # all 70, dbt too (step 7)
 ```
 
 A test runs a piece of the pipeline on input where the right answer is known, and fails if the answer changes. Run them after every change: if something breaks, a test names it before it reaches the reports.
@@ -167,8 +170,9 @@ A test runs a piece of the pipeline on input where the right answer is known, an
 |---|---|---|
 | [test_validate_workbook.py](tests/test_validate_workbook.py) | Every check: a clean workbook passes, each mistake gives its exact message and Excel row, later stages wait for earlier ones, the daily check ignores tasks and other days | A tiny workbook (3 branches, 2 tasks, 1 issue), with one thing broken per test |
 | [test_weekly_ranking.py](tests/test_weekly_ranking.py) | Which week the Excel ranking is for. (The ranking math was tested here until step 7 moved it into dbt; its tests are now dbt unit tests.) | Dates |
-| [test_distribute_issues.py](tests/test_distribute_issues.py) | One file per branch in its manager's folder, the right rows, each photo on its own row and the same picture as in the workbook; a mistake writes nothing | The sample workbook (the only one with in-cell photos) |
-| [test_database.py](tests/test_database.py) | A second load adds nothing, a failed load saves nothing, a corrected manager is updated, dbt builds with every check passing, the daily KPIs and the weekly Excel files add up to the workbook | The sample workbook, in a test database |
+| [test_intake.py](tests/test_intake.py) | The intake folder (step 8): any file name, lock and hidden files skipped, problems named with their file, the same day in two files, deleting only files older than `KEEP_DAYS` days | The tiny workbook, saved as daily files |
+| [test_distribute_issues.py](tests/test_distribute_issues.py) | One file per branch in its manager's folder, the right rows, each photo on its own row and the same picture as in the day's file; a mistake writes nothing; a missing day's file stops the run | The sample's daily files (the only ones with in-cell photos) |
+| [test_database.py](tests/test_database.py) | A second load adds nothing, a failed load saves nothing, a corrected manager is updated, old files are deleted only after a successful load, dbt builds with every check passing, the daily KPIs and the weekly Excel files add up to the daily files | A copy of the sample's daily files, in a test database |
 
 The tiny workbook is built in [conftest.py](tests/conftest.py), a file pytest loads by itself. Each test gets a fresh copy.
 
@@ -336,3 +340,47 @@ cd v2/dbt && dbt build             # the same, with dbt itself (dbt finds profil
 **Known limits:**
 - The sample covers October only, so the rotation is tested with the tiny workbooks and the unit tests, not on the sample.
 - dbt's own `.yml` files repeat a few rules the workbook check already enforces (for example, every branch has a manager each month). That's deliberate: the workbook check guards what goes in, and dbt checks what comes out.
+
+## Step 8: the intake folder
+
+Before this step, the day's data passed through two manual hands: the entry person in Egypt filled a daily Excel file, then it was copied, row by row with its photos, into `07-2024.xlsx`, which the pipeline read. That workbook keeps every row and photo forever (Lubda's is already over 2 GB).
+
+Now his daily file goes into an **intake folder** as it is, and the pipeline reads the daily files there. `07-2024.xlsx` keeps only the lists you maintain. After each weekly load, files older than 10 days are deleted.
+
+| | Before | Now |
+|---|---|---|
+| Getting the day's data in | Copy his rows and photos into `07-2024.xlsx` | Save his file into the intake folder |
+| Tasks and issues | One workbook that keeps growing | One file per day; the folder keeps the last 10 days |
+| Photos for the managers' daily files | From `07-2024.xlsx` | From that day's file |
+| History | `07-2024.xlsx` and the database | The database |
+| `07-2024.xlsx` | Everything | The lists: branches and codes, Managers, Fixed Choices |
+
+Why not have a script copy his rows into `07-2024.xlsx` instead: Python's Excel library (openpyxl) can't keep Excel's in-cell photos. Opening the step 7 sample workbook, adding one row and saving it took the photos from 90 to 0. Keeping that workbook would have meant driving Excel itself, or rewriting the photo parts inside the file by hand.
+
+### How it works
+
+- **Any file name.** The days are read from inside each file. Excel's lock files (`~$...`) and the hidden `._` files macOS leaves on some drives are skipped.
+- **Each daily file is checked with the lists, like one workbook**, with every rule from step 3. A problem names its file: `2026-10-26.xlsx: Reviewing Reports row 4: description 'Bread cold' isn't in Fixed Choices`. A problem in the lists is listed once, without a file name.
+- **Between files:** a day in two files is reported (for example a corrected resend next to the first one: remove the old one), and so is a file with no tasks.
+- **The daily run** uses the file that has that day. If there's none, it stops with `No file for 2026-11-15 in the intake folder`, and Airflow emails FAILED: drop the file in and click *Clear* on the run. A file with tasks but no issues is a normal day with nothing to send.
+- **The weekly load** reads every file in the folder, in one transaction. A problem in any file means nothing is loaded.
+- **Keeping 10 days:** after the load is saved, a file is deleted when all its days are more than `KEEP_DAYS` days before the report date. The Wednesday run (report date: Tuesday Nov 10) keeps Nov 1–10. Files go for good, photos included: the database keeps the tasks and issues, but never had the photos. If the load fails, nothing is deleted. With `KEEP_DAYS` not set, nothing is ever deleted, which is how the sample files stay safe.
+
+### Setting it up
+
+1. Make an intake folder and set `INTAKE_DIR` and `KEEP_DAYS=10` in `airflow.env`.
+2. Point `WORKBOOK_PATH` at the workbook with the lists. Only its three list sheets are read; a small copy holding just those lists opens faster than a 2 GB workbook.
+3. Each day, drop the entry person's file into the folder before the daily run (11:59 pm Riyadh time).
+
+### Tested
+
+- **The sample, split into 14 daily files:** the same 84 tasks, 90 issues and 90 photos, in the same order, as the single workbook before.
+- **Daily files:** for Oct 26, the five manager files are identical to the ones made from the single workbook (cells, photos, positions).
+- **Load and delete**, on a copy of the sample with `KEEP_DAYS=10` and report date Oct 27: all 14 days loaded, the 5 files for Oct 13–17 deleted, Oct 18–26 kept. A second run added nothing.
+- **Tests:** [test_intake.py](tests/test_intake.py) is new, and the other test files now read daily files. Two database tests check that old files are deleted after a successful load, and that nothing is deleted when the load fails.
+- **Planted bugs:** 11 bugs, one at a time, in the new code. Examples: lock files not skipped, a day in two files not reported, 11 days kept instead of 10, a file deleted by its oldest day instead of its newest, files deleted before the load, a missing day's file treated as a day with no issues, photos read from the wrong file. Each one made a test fail.
+
+**Known limits:**
+- If the Mac is off for more than 10 days, the weekly catch-up run can delete files that the daily catch-up runs for those days still need. Those daily runs then fail with "No file", and their emails say so.
+- His file must keep the sheets *Source Data* and *Reviewing Reports* with the same columns.
+- Photos older than 10 days are deleted with their files, as decided. The database never kept photos.

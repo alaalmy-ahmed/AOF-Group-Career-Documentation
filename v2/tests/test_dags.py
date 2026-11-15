@@ -130,7 +130,7 @@ def test_failed_script_fails_the_task_with_its_output(monkeypatch):
 
 
 def test_runs_the_real_script(monkeypatch, tmp_path):
-    """No fakes: the sample workbook's last day, written to a temporary folder."""
+    """No fakes: the sample's last day, written to a temporary folder."""
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
 
     output = pipeline_dags.run_script("distribute_issues.py", 0, logical_date=riyadh(2026, 10, 26, 23, 59))

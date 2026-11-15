@@ -54,6 +54,21 @@ flowchart LR
 
 More detail in [docs/architecture.md](docs/architecture.md).
 
+## v2: the rebuild
+
+v1 works, but the notebooks are started by hand, nothing reports a failed run, and the database has no keys, so repeated or mistyped rows can slip in. [v2/](v2) rebuilds the pipeline step by step from the same workbook, each step fixing one of those weaknesses. It runs on the sample data and isn't in production yet.
+
+| Step | What it adds |
+|---|---|
+| 1–2 | A normalised PostgreSQL schema with keys and constraints, and a load that's safe to re-run |
+| 3 | Checks on the workbook that list every problem with its sheet and row, before anything is loaded |
+| 4–5 | The notebooks as Python scripts, with pytest tests |
+| 6 | Airflow runs the daily and weekly jobs on a schedule and emails the result of each step |
+| 7 | dbt builds tested reporting views: daily branch KPIs, weekly and monthly rankings |
+| 8 | The entry person's daily files go into an intake folder and are read from there; only the last 10 days are kept |
+
+Design decisions, and how each step was tested: [v2/README.md](v2/README.md).
+
 ## Try it
 
 The repo includes the two production notebooks, cleaned up to run on **fake sample data** with the same structure as the real workbook: 36 branches, 10 managers, two weeks of tasks and issues, and in-cell photos.
@@ -100,6 +115,7 @@ One piece was added for this portfolio and isn't used at AOF: the **SQL version 
 | [notebooks/](notebooks) | The daily and weekly notebooks |
 | [sample_data/](sample_data) | Fake workbook and managers file, plus [the script that generates them](sample_data/generate_sample_data.py) |
 | [sql/](sql) | Table definitions, the [weekly ranking in SQL](sql/ranking.sql) (functions and views), and the production schema exports in `sql/production/` |
+| [v2/](v2) | The rebuild: scripts, tests, Airflow DAGs and dbt models ([v2/README.md](v2/README.md)) |
 
 ## Documentation
 
@@ -115,6 +131,8 @@ One piece was added for this portfolio and isn't used at AOF: the **SQL version 
 ## Tech stack
 
 `Python` · `pandas` · `openpyxl` · `PostgreSQL` · `psycopg2` · `Jupyter` · `Power BI`
+
+v2 adds `Airflow` · `dbt` · `pytest`
 
 ## Author
 

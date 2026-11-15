@@ -8,9 +8,8 @@ from datetime import date
 import pandas as pd
 import pytest
 
-import validate_workbook
-from conftest import DAY, JANUARY, write_workbook
-from validate_workbook import find_day_problems, find_problems, read_workbook
+from conftest import DAY, JANUARY, write_files
+from validate_workbook import find_day_problems, find_intake_problems, find_problems, read_intake
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -20,8 +19,8 @@ def test_tiny_workbook_has_no_problems(sheets):
     assert find_problems(sheets) == []
 
 
-def test_sample_workbook_has_no_problems():
-    assert find_problems(read_workbook()) == []
+def test_sample_files_have_no_problems():
+    assert find_intake_problems(read_intake()) == []
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -194,39 +193,35 @@ def test_day_check_needs_that_months_managers(sheets):
 
 
 # --------------------------------------------------------------------------------------------------------
-# Reading the workbook file
+# Reading the files
 
-def test_read_workbook_cleans_up(sheets, tmp_path, monkeypatch):
+def test_reading_cleans_up(sheets, tmp_path, monkeypatch):
     sheets["Source Data"].loc[1, "Branches Missed Tasks"] = "Olaya  "  # spaces at the end
     sheets["Reviewing Reports"].loc[0, "Branch"] = " Malaz"            # a space at the start
     sheets["Managers"]["Month"] = "2026-01-15"                         # any day in the month, typed as text
-    workbook_path, meals_path = write_workbook(sheets, tmp_path)
-    # monkeypatch changes a setting for this test only (tmp_path is a new empty folder)
-    monkeypatch.setattr(validate_workbook, "WORKBOOK_PATH", workbook_path)
-    monkeypatch.setattr(validate_workbook, "MEALS_PATH", meals_path)
+    # tmp_path is a new empty folder; monkeypatch points the scripts at it for this test only
+    write_files(sheets, tmp_path, monkeypatch)
 
-    read = read_workbook()
+    [(name, _, read)] = read_intake()
+    assert name == "day.xlsx"
     assert read["Reviewing Reports"].loc[0, "Branch"] == "Malaz"
     assert read["Source Data"].loc[0, "Date"] == DAY                   # a plain date, not a timestamp
     assert read["Managers"].loc[0, "Month"] == JANUARY                 # turned into the 1st of the month
     assert find_problems(read) == []
 
 
-def test_read_workbook_reports_a_bad_date(sheets, tmp_path, monkeypatch):
+def test_reading_reports_a_bad_date(sheets, tmp_path, monkeypatch):
     sheets["Source Data"]["Date"] = sheets["Source Data"]["Date"].astype(object)
     sheets["Source Data"].loc[1, "Date"] = "13/13/2026"
-    workbook_path, meals_path = write_workbook(sheets, tmp_path)
-    monkeypatch.setattr(validate_workbook, "WORKBOOK_PATH", workbook_path)
-    monkeypatch.setattr(validate_workbook, "MEALS_PATH", meals_path)
+    write_files(sheets, tmp_path, monkeypatch)
 
-    assert find_problems(read_workbook()) == ["Source Data row 3: Date is blank or not a date"]
+    assert find_intake_problems(read_intake()) == ["day.xlsx: Source Data row 3: Date is blank or not a date"]
 
 
-def test_read_workbook_reports_a_bad_month(sheets, tmp_path, monkeypatch):
+def test_reading_reports_a_bad_month(sheets, tmp_path, monkeypatch):
     sheets["Managers"]["Month"] = sheets["Managers"]["Month"].astype(object)
     sheets["Managers"].loc[0, "Month"] = "Octember"
-    workbook_path, meals_path = write_workbook(sheets, tmp_path)
-    monkeypatch.setattr(validate_workbook, "WORKBOOK_PATH", workbook_path)
-    monkeypatch.setattr(validate_workbook, "MEALS_PATH", meals_path)
+    write_files(sheets, tmp_path, monkeypatch)
 
-    assert find_problems(read_workbook()) == ["Managers row 2: Month is blank or not a date"]
+    # A problem in the lists isn't named after a daily file
+    assert find_intake_problems(read_intake()) == ["Managers row 2: Month is blank or not a date"]

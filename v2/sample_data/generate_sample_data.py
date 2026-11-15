@@ -1,6 +1,6 @@
 """
-Generate the fake v2 workbook: v1's sample workbook plus the two changes v2
-needs from the data entry, and a separate meal list.
+Generate the fake v2 sample data: the lists workbook, one daily file per day
+in the intake folder (step 8), and the meal list. Compared with v1's sample:
 
   - Reviewing Reports has a "Due time" column, so each issue points to one
     scheduled task. A meal can be due twice a day (Arabi Sop is here).
@@ -9,6 +9,8 @@ needs from the data entry, and a separate meal list.
   - The Managers sheet has a "Month" column, one row per branch per month, so
     last month's managers aren't lost at the monthly rotation. The sample
     covers October 2026 only, so every row is that month.
+  - The tasks and issues come as one daily file per day, like the files the
+    entry person sends (step 8). The lists workbook holds only the lists.
 
 Everything here is made up: managers, branch codes, trainees, employee IDs
 and issues. The workbook mirrors the production file's sheets and columns, and
@@ -19,8 +21,9 @@ Usage:
     python v2/sample_data/generate_sample_data.py
 
 Outputs (next to this script):
-    sample_workbook.xlsx   Source Data, Reviewing Reports, branches and codes,
-                           Managers, Fixed Choices
+    sample_workbook.xlsx   The lists: branches and codes, Managers, Fixed Choices
+    intake/<date>.xlsx     One daily file per day: Source Data (tasks) and
+                           Reviewing Reports (issues, with photos in the cells)
     meals.xlsx             One column, Meal: the allowed meal names
 """
 
@@ -37,6 +40,7 @@ from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORKBOOK_PATH = os.path.join(HERE, "sample_workbook.xlsx")
+INTAKE_DIR = os.path.join(HERE, "intake")
 MEALS_PATH = os.path.join(HERE, "meals.xlsx")
 
 SEED = 7
@@ -263,38 +267,57 @@ def add_in_cell_pictures(xlsx_path, sheet_xml, image_col, row_to_vm, photos):
 # --------------------------------------------------------------------------------------------------------
 # Main
 
+def write_daily_file(path, tasks, issues, photos, photo_of_issue):
+    """One day's file, like the entry person's: Source Data and Reviewing
+    Reports, with each issue's photo in its Images cell."""
+    with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        tasks.to_excel(writer, sheet_name="Source Data", index=False)
+        issues.to_excel(writer, sheet_name="Reviewing Reports", index=False)
+
+    # Write the Images cells as #VALUE! errors, which is how Excel stores an in-cell picture's value.
+    wb = openpyxl.load_workbook(path)
+    ws = wb["Reviewing Reports"]
+    image_col = openpyxl.utils.get_column_letter(list(issues.columns).index("Images") + 1)
+    for row in range(2, len(issues) + 2):
+        ws[f"{image_col}{row}"].value = "#VALUE!"
+        ws[f"{image_col}{row}"].data_type = "e"
+    sheet_index = wb.sheetnames.index("Reviewing Reports") + 1
+    wb.save(path)
+
+    row_to_vm = {row: vm for row, vm in zip(range(2, len(issues) + 2), photo_of_issue)}
+    add_in_cell_pictures(path, f"xl/worksheets/sheet{sheet_index}.xml", image_col, row_to_vm, photos)
+
+
 def main():
     rng = random.Random(SEED)
     tasks_df, issues_df, branches_df, managers_df, fixed_df = build_frames(rng)
 
+    # The lists workbook
     with pd.ExcelWriter(WORKBOOK_PATH, engine="openpyxl") as writer:
-        tasks_df.to_excel(writer, sheet_name="Source Data", index=False)
-        issues_df.to_excel(writer, sheet_name="Reviewing Reports", index=False)
         branches_df.to_excel(writer, sheet_name="branches and codes", index=False)
         managers_df.to_excel(writer, sheet_name="Managers", index=False)
         fixed_df.to_excel(writer, sheet_name="Fixed Choices", index=False)
 
-    # Write the Images cells as #VALUE! errors, which is how Excel stores an in-cell picture's value.
-    wb = openpyxl.load_workbook(WORKBOOK_PATH)
-    ws = wb["Reviewing Reports"]
-    image_col = openpyxl.utils.get_column_letter(list(issues_df.columns).index("Images") + 1)
-    for row in range(2, len(issues_df) + 2):
-        ws[f"{image_col}{row}"].value = "#VALUE!"
-        ws[f"{image_col}{row}"].data_type = "e"
-    sheet_index = wb.sheetnames.index("Reviewing Reports") + 1
-    wb.save(WORKBOOK_PATH)
-
+    # One daily file per day. Each issue gets one of the placeholder photos.
     photos = [make_photo(i) for i in range(len(PHOTO_COLORS))]
-    row_to_vm = {row: rng.randint(1, len(photos)) for row in range(2, len(issues_df) + 2)}
-    add_in_cell_pictures(WORKBOOK_PATH, f"xl/worksheets/sheet{sheet_index}.xml", image_col, row_to_vm, photos)
+    photo_of_issue = [rng.randint(1, len(photos)) for _ in range(len(issues_df))]
+    os.makedirs(INTAKE_DIR, exist_ok=True)
+    for name in os.listdir(INTAKE_DIR):
+        if name.endswith(".xlsx"):
+            os.remove(os.path.join(INTAKE_DIR, name))
+    for day, day_tasks in tasks_df.groupby("Date"):
+        on_day = issues_df["Date"] == day
+        write_daily_file(os.path.join(INTAKE_DIR, f"{day.date()}.xlsx"),
+                         day_tasks, issues_df[on_day].reset_index(drop=True), photos,
+                         [vm for vm, keep in zip(photo_of_issue, on_day) if keep])
 
     # The meal list (each meal once, even if it's due twice a day).
     meals = list(dict.fromkeys(meal for meal, _ in MEALS))
     pd.DataFrame({"Meal": meals}).to_excel(MEALS_PATH, index=False)
 
-    print(f"Wrote {WORKBOOK_PATH}")
-    print(f"  {len(tasks_df)} task rows, {len(issues_df)} issues, {len(branches_df)} branches, "
-          f"{len(MANAGERS)} managers, {len(photos)} photos, {tasks_df['Date'].min().date()} to {END_DATE}")
+    print(f"Wrote {WORKBOOK_PATH}: {len(branches_df)} branches, {len(MANAGERS)} managers")
+    print(f"Wrote {tasks_df['Date'].nunique()} daily files to {INTAKE_DIR}: {len(tasks_df)} task rows, "
+          f"{len(issues_df)} issues, {tasks_df['Date'].min().date()} to {END_DATE}")
     print(f"Wrote {MEALS_PATH}: {len(meals)} meals")
 
 

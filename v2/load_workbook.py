@@ -1,26 +1,34 @@
 """
-Load the operations workbook into the v2 schema (v2/sql/001_schema.sql).
+Load every daily file in the intake folder, with the lists, into the v2
+schema (v2/sql/001_schema.sql).
 
-The workbook is checked first (validate_workbook.py). If it has any problem,
-they're all listed and nothing is loaded.
+Everything is checked first (validate_workbook.py). If any file has a
+problem, they're all listed and nothing is loaded.
 
 Safe to run more than once: rows already in the database are skipped, using
 the unique rules from the schema. Everything runs in one transaction, so a
 run that fails part-way changes nothing.
 
+After a successful load, daily files older than KEEP_DAYS days are deleted
+(step 8): they're in the database by then.
+
 Usage:
     python v2/load_workbook.py
 
-Settings: WORKBOOK_PATH, MEALS_PATH, PGDATABASE (see settings.py), and
-PGHOST, PGPORT, PGUSER, PGPASSWORD, which psycopg2 reads by itself.
+Settings: INTAKE_DIR, WORKBOOK_PATH, MEALS_PATH, PGDATABASE, KEEP_DAYS,
+REPORT_DATE (see settings.py), and PGHOST, PGPORT, PGUSER, PGPASSWORD, which
+psycopg2 reads by itself.
 """
 
+import os
 import sys
+from datetime import timedelta
 
+import pandas as pd
 import psycopg2
 
-from settings import DATABASE
-from validate_workbook import find_problems, print_problems, read_workbook
+from settings import DATABASE, KEEP_DAYS, REPORT_DATE
+from validate_workbook import days_in, find_intake_problems, print_problems, read_intake
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -140,28 +148,50 @@ def load(cur, tasks, issues, branches, managers, meals):
     print(f"quality_issues:  {added} new of {len(issues)}")
 
 
+# --------------------------------------------------------------------------------------------------------
+# Keep only the last days in the intake folder
+
+def delete_old_files(files):
+    """Delete the daily files whose days are all more than KEEP_DAYS days before
+    REPORT_DATE. main() calls this only after the load has been saved, so every
+    file deleted is already in the database. With KEEP_DAYS not set, nothing is
+    deleted."""
+    if KEEP_DAYS is None:
+        return
+    last_day_to_delete = REPORT_DATE - timedelta(days=KEEP_DAYS)
+    old = [(name, path) for name, path, sheets in files if max(days_in(sheets)) <= last_day_to_delete]
+    for _, path in old:
+        os.remove(path)
+    names = ", ".join(name for name, _ in old) or "none"
+    print(f"Deleted {len(old)} daily file(s) with only days up to {last_day_to_delete} "
+          f"(older than {KEEP_DAYS} days, already loaded): {names}")
+
+
 def main():
-    sheets = read_workbook()
-    problems = find_problems(sheets)
+    files = read_intake()
+    problems = find_intake_problems(files)
     if problems:
         print_problems(problems)
         print("Nothing was loaded.")
         sys.exit(1)
 
-    tasks = reshape_tasks(sheets["Source Data"])
-    issues = sheets["Reviewing Reports"]
-    branches = sheets["branches and codes"]
-    managers = sheets["Managers"]
-    meals = sheets["meals.xlsx"]
+    # All the daily files together, as if they were one workbook
+    tasks = reshape_tasks(pd.concat([sheets["Source Data"] for _, _, sheets in files], ignore_index=True))
+    issues = pd.concat([sheets["Reviewing Reports"] for _, _, sheets in files], ignore_index=True)
+    lists = files[0][2]                 # the same lists come with every file
+    all_days = set().union(*(days_in(sheets) for _, _, sheets in files))
+    print(f"{len(files)} daily file(s), {min(all_days)} to {max(all_days)}")
 
     conn = psycopg2.connect(dbname=DATABASE)
     try:
         # Commits if everything succeeds, rolls back if anything fails
         with conn, conn.cursor() as cur:
-            load(cur, tasks, issues, branches, managers, meals)
+            load(cur, tasks, issues, lists["branches and codes"], lists["Managers"], lists["meals.xlsx"])
         print("Done.")
     finally:
         conn.close()
+
+    delete_old_files(files)
 
 
 if __name__ == "__main__":
