@@ -1,0 +1,231 @@
+# Unit tests: each one gives a model a few made-up input rows, where the right
+# answer can be worked out on paper, and checks the rows it returns. They
+# don't touch the real data. Only the columns listed are compared.
+#
+# Run them alone with:   dbt test --select test_type:unit
+
+unit_tests:
+
+  # ── branch_daily ────────────────────────────────────────────────────────
+
+  - name: daily_counts_and_the_month_manager
+    description: >
+      Two branches, 2 tasks on Jan 6 and 1 on Feb 3. Malaz missed one task on
+      Jan 6; Olaya got 2 issues. The managers swap branches between January
+      and February, so each day shows that month's manager.
+    model: branch_daily
+    given:
+      - input: source('ops', 'scheduled_tasks')
+        rows:
+          - {task_id: 1, task_date: 2026-01-06}
+          - {task_id: 2, task_date: 2026-01-06}
+          - {task_id: 3, task_date: 2026-02-03}
+      - input: source('ops', 'task_misses')
+        rows:
+          - {task_id: 2, branch_code: B1}
+      - input: source('ops', 'quality_issues')
+        rows:
+          - {task_id: 1, branch_code: B2}
+          - {task_id: 2, branch_code: B2}
+      - input: source('ops', 'branches')
+        rows:
+          - {code: B1, name: Malaz}
+          - {code: B2, name: Olaya}
+      - input: source('ops', 'branch_managers')
+        rows:
+          - {month: 2026-01-01, branch_code: B1, manager_id: 1}
+          - {month: 2026-01-01, branch_code: B2, manager_id: 2}
+          - {month: 2026-02-01, branch_code: B1, manager_id: 2}
+          - {month: 2026-02-01, branch_code: B2, manager_id: 1}
+      - input: source('ops', 'managers')
+        rows:
+          - {manager_id: 1, name: Manager A}
+          - {manager_id: 2, name: Manager B}
+    expect:
+      rows:
+        - {task_date: 2026-01-06, branch: Malaz, manager: Manager A, tasks_due: 2, tasks_missed: 1, tasks_submitted: 1, submission_rate: 50.0, quality_issues: 0}
+        - {task_date: 2026-01-06, branch: Olaya, manager: Manager B, tasks_due: 2, tasks_missed: 0, tasks_submitted: 2, submission_rate: 100.0, quality_issues: 2}
+        - {task_date: 2026-02-03, branch: Malaz, manager: Manager B, tasks_due: 1, tasks_missed: 0, tasks_submitted: 1, submission_rate: 100.0, quality_issues: 0}
+        - {task_date: 2026-02-03, branch: Olaya, manager: Manager A, tasks_due: 1, tasks_missed: 0, tasks_submitted: 1, submission_rate: 100.0, quality_issues: 0}
+
+  # ── branch_weekly_ranking ───────────────────────────────────────────────
+  #
+  # The tiny week (10 tasks, 4 branches), worked out on paper:
+  #
+  #   Branch  Manager  missed  issues  done rate
+  #   A       X        0       0       100 - 0/10*100 = 100
+  #   B       X        1       2       100 - 1/10*100 =  90
+  #   C       Y        2       0       100 - 2/10*100 =  80
+  #   D       Y        0       4       100
+  #
+  #   score = 0.90 * done rate / 100 + 0.10 * (1 - issues / 4)
+  #   A  0.90 * 1.0 + 0.10 * 1.0 = 1.00   rank 1, Excellent
+  #   D  0.90 * 1.0 + 0.10 * 0.0 = 0.90   rank 2, Fair (0.90 itself is in 0.80-0.90)
+  #   B  0.90 * 0.9 + 0.10 * 0.5 = 0.86   rank 3, Fair
+  #   C  0.90 * 0.8 + 0.10 * 1.0 = 0.82   rank 4, Fair
+
+  - name: branch_ranking_on_the_tiny_week
+    model: branch_weekly_ranking
+    given:
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-01-06, branch_code: A, branch: A, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 0}
+          - {task_date: 2026-01-06, branch_code: B, branch: B, manager: X, tasks_due: 10, tasks_missed: 1, quality_issues: 2}
+          - {task_date: 2026-01-06, branch_code: C, branch: C, manager: Y, tasks_due: 10, tasks_missed: 2, quality_issues: 0}
+          - {task_date: 2026-01-06, branch_code: D, branch: D, manager: Y, tasks_due: 10, tasks_missed: 0, quality_issues: 4}
+    expect:
+      rows:
+        - {week_start: 2025-12-31, week_end: 2026-01-06, branch: A, manager: X, done_rate: 100.0, number_of_issues: 0, branches_rank: 1, completion_grade: Excellent, score: "1.0000"}
+        - {week_start: 2025-12-31, week_end: 2026-01-06, branch: D, manager: Y, done_rate: 100.0, number_of_issues: 4, branches_rank: 2, completion_grade: Fair, score: "0.9000"}
+        - {week_start: 2025-12-31, week_end: 2026-01-06, branch: B, manager: X, done_rate: 90.0, number_of_issues: 2, branches_rank: 3, completion_grade: Fair, score: "0.8600"}
+        - {week_start: 2025-12-31, week_end: 2026-01-06, branch: C, manager: Y, done_rate: 80.0, number_of_issues: 0, branches_rank: 4, completion_grade: Fair, score: "0.8200"}
+
+  - name: ties_share_a_rank
+    description: B now matches A exactly, so both are 1st and the next rank is 3.
+    model: branch_weekly_ranking
+    given:
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-01-06, branch_code: A, branch: A, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 0}
+          - {task_date: 2026-01-06, branch_code: B, branch: B, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 0}
+          - {task_date: 2026-01-06, branch_code: C, branch: C, manager: Y, tasks_due: 10, tasks_missed: 2, quality_issues: 0}
+          - {task_date: 2026-01-06, branch_code: D, branch: D, manager: Y, tasks_due: 10, tasks_missed: 0, quality_issues: 4}
+    expect:
+      rows:
+        - {branch: A, branches_rank: 1}
+        - {branch: B, branches_rank: 1}
+        - {branch: D, branches_rank: 3}
+        - {branch: C, branches_rank: 4}
+
+  - name: a_week_with_no_issues_still_ranks
+    description: With no issues at all, the issue share is 0 for everyone instead of dividing by zero.
+    model: branch_weekly_ranking
+    given:
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-01-06, branch_code: A, branch: A, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 0}
+          - {task_date: 2026-01-06, branch_code: B, branch: B, manager: X, tasks_due: 10, tasks_missed: 1, quality_issues: 0}
+          - {task_date: 2026-01-06, branch_code: C, branch: C, manager: Y, tasks_due: 10, tasks_missed: 2, quality_issues: 0}
+          - {task_date: 2026-01-06, branch_code: D, branch: D, manager: Y, tasks_due: 10, tasks_missed: 0, quality_issues: 0}
+    expect:
+      rows:
+        - {branch: A, branches_rank: 1}
+        - {branch: D, branches_rank: 1}
+        - {branch: B, branches_rank: 3}
+        - {branch: C, branches_rank: 4}
+
+  - name: exactly_095_is_good
+    description: >
+      A: 0.90 * 1 + 0.10 * (1 - 2/4) = 0.95 exactly, which is Good (Excellent
+      starts above 0.95). The old pandas code got 0.9500000000000001 here and
+      said Excellent. B: 0.90 + 0 = 0.90, Fair.
+    model: branch_weekly_ranking
+    given:
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-01-06, branch_code: A, branch: A, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 2}
+          - {task_date: 2026-01-06, branch_code: B, branch: B, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 4}
+    expect:
+      rows:
+        - {branch: A, completion_grade: Good}
+        - {branch: B, completion_grade: Fair}
+
+  - name: each_week_is_ranked_on_its_own
+    description: >
+      Week 1 has a branch with 10 issues; week 2's most is 1. In week 2,
+      A: 0.90 * 1 + 0.10 * (1 - 1/1) = 0.90 and B: 0.90 * 0.9 + 0.10 * 1 = 0.91,
+      so B is 1st. Dividing by week 1's 10 instead would put A first.
+    model: branch_weekly_ranking
+    given:
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-01-06, branch_code: A, branch: A, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 10}
+          - {task_date: 2026-01-06, branch_code: B, branch: B, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 0}
+          - {task_date: 2026-01-13, branch_code: A, branch: A, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 1}
+          - {task_date: 2026-01-13, branch_code: B, branch: B, manager: X, tasks_due: 10, tasks_missed: 1, quality_issues: 0}
+    expect:
+      rows:
+        - {week_end: 2026-01-06, branch: B, branches_rank: 1}
+        - {week_end: 2026-01-06, branch: A, branches_rank: 2}
+        - {week_end: 2026-01-13, branch: B, branches_rank: 1}
+        - {week_end: 2026-01-13, branch: A, branches_rank: 2}
+
+  - name: weeks_run_wednesday_to_tuesday
+    description: >
+      Branch A on Tue Oct 27, Wed Oct 28, Fri Oct 30 and Tue Nov 3 (2 tasks a
+      day). Oct 27 ends one week; Oct 28 starts the next. The second week spans
+      the Nov 1 rotation, so it counts for Y, the manager on its last day.
+      Its done rate: 1 missed of 6 = 100 - 16.7 = 83.3.
+    model: branch_weekly_ranking
+    given:
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-10-27, branch_code: A, branch: A, manager: X, tasks_due: 2, tasks_missed: 0, quality_issues: 0}
+          - {task_date: 2026-10-28, branch_code: A, branch: A, manager: X, tasks_due: 2, tasks_missed: 1, quality_issues: 0}
+          - {task_date: 2026-10-30, branch_code: A, branch: A, manager: X, tasks_due: 2, tasks_missed: 0, quality_issues: 0}
+          - {task_date: 2026-11-03, branch_code: A, branch: A, manager: Y, tasks_due: 2, tasks_missed: 0, quality_issues: 0}
+    expect:
+      rows:
+        - {week_start: 2026-10-21, week_end: 2026-10-27, manager: X, done_rate: 100.0}
+        - {week_start: 2026-10-28, week_end: 2026-11-03, manager: Y, done_rate: 83.3}
+
+  # ── manager_weekly_ranking ──────────────────────────────────────────────
+
+  - name: manager_ranking_on_the_tiny_week
+    description: >
+      X: done rate (100 + 90) / 2 = 95.0, issues per branch (0 + 2) / 2 = 1.0.
+      Y: done rate (80 + 100) / 2 = 90.0, issues per branch (0 + 4) / 2 = 2.0.
+      X scores 0.85 * 1 + 0.15 * (1 - 0.5) = 0.925; Y scores 0.85 * 90/95 + 0.15 * 0 = 0.805.
+    model: manager_weekly_ranking
+    given:
+      - input: ref('branch_weekly_ranking')
+        rows:
+          - {week_start: 2025-12-31, week_end: 2026-01-06, manager: X, done_rate: 100.0, number_of_issues: 0}
+          - {week_start: 2025-12-31, week_end: 2026-01-06, manager: X, done_rate: 90.0, number_of_issues: 2}
+          - {week_start: 2025-12-31, week_end: 2026-01-06, manager: Y, done_rate: 80.0, number_of_issues: 0}
+          - {week_start: 2025-12-31, week_end: 2026-01-06, manager: Y, done_rate: 100.0, number_of_issues: 4}
+    expect:
+      rows:
+        - {manager: X, branches: 2, done_rate: 95.0, issues_per_branch: 1.0, number_of_issues: 2, managers_rank: 1}
+        - {manager: Y, branches: 2, done_rate: 90.0, issues_per_branch: 2.0, number_of_issues: 4, managers_rank: 2}
+
+  - name: issues_weigh_15_percent_for_managers
+    description: >
+      X: done 100, 2.0 issues per branch -> 0.85 * 1 + 0.15 * 0 = 0.85.
+      Y: done 88, no issues -> 0.85 * 0.88 + 0.15 * 1 = 0.898, so Y is 1st.
+      With the branches' 90/10 weights it would flip (X 0.90, Y 0.892).
+    model: manager_weekly_ranking
+    given:
+      - input: ref('branch_weekly_ranking')
+        rows:
+          - {week_start: 2025-12-31, week_end: 2026-01-06, manager: X, done_rate: 100.0, number_of_issues: 2}
+          - {week_start: 2025-12-31, week_end: 2026-01-06, manager: Y, done_rate: 88.0, number_of_issues: 0}
+    expect:
+      rows:
+        - {manager: Y, managers_rank: 1, score: "0.8980"}
+        - {manager: X, managers_rank: 2, score: "0.8500"}
+
+  # ── manager_monthly_ranking ─────────────────────────────────────────────
+
+  - name: monthly_ranking_follows_the_rotation
+    description: >
+      X runs A in October and B in November; Y the other way round (10 tasks a
+      month each).
+      October:  X (A): done 100, 0 issues -> score 0.85 + 0.15 = 1.00, rank 1
+                Y (B): done 80, 1 issue   -> score 0.85 * 0.8 + 0 = 0.68, rank 2
+      November: Y (A): done 90, 0 issues  -> score 0.85 * 0.9 + 0.15 = 0.915, rank 1
+                X (B): done 100, 3 issues -> score 0.85 + 0 = 0.85, rank 2
+    model: manager_monthly_ranking
+    given:
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-10-13, branch_code: A, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 0}
+          - {task_date: 2026-10-13, branch_code: B, manager: Y, tasks_due: 10, tasks_missed: 2, quality_issues: 1}
+          - {task_date: 2026-11-10, branch_code: A, manager: Y, tasks_due: 10, tasks_missed: 1, quality_issues: 0}
+          - {task_date: 2026-11-10, branch_code: B, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 3}
+    expect:
+      rows:
+        - {month: 2026-10-01, manager: X, branches: 1, done_rate: 100.0, issues_per_branch: 0.0, number_of_issues: 0, managers_rank: 1, score: "1.0000"}
+        - {month: 2026-10-01, manager: Y, branches: 1, done_rate: 80.0, issues_per_branch: 1.0, number_of_issues: 1, managers_rank: 2, score: "0.6800"}
+        - {month: 2026-11-01, manager: Y, branches: 1, done_rate: 90.0, issues_per_branch: 0.0, number_of_issues: 0, managers_rank: 1, score: "0.9150"}
+        - {month: 2026-11-01, manager: X, branches: 1, done_rate: 100.0, issues_per_branch: 3.0, number_of_issues: 3, managers_rank: 2, score: "0.8500"}

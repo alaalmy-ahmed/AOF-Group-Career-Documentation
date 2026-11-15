@@ -11,6 +11,7 @@ import psycopg2
 import pytest
 
 DAY = date(2026, 1, 1)
+JANUARY = date(2026, 1, 1)      # the Managers sheet's Month: the first day of the month
 
 
 @pytest.fixture
@@ -44,6 +45,7 @@ def sheets():
             "Branch": ["Malaz", "Olaya", "Rawdah"],
         }),
         "Managers": pd.DataFrame({
+            "Month":   [JANUARY,     JANUARY,     JANUARY],
             "Branch":  ["Malaz",     "Olaya",     "Rawdah"],
             "Manager": ["Manager A", "Manager A", "Manager B"],
         }),

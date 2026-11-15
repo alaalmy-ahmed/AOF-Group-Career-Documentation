@@ -23,11 +23,19 @@ CREATE TABLE ops.managers (
 );
 
 -- The branch code (e.g. B25) is short and unique, so it is the key.
--- manager_id is the branch's current manager.
 CREATE TABLE ops.branches (
-    code        varchar(30)  PRIMARY KEY,
-    name        varchar(255) NOT NULL UNIQUE,
-    manager_id  integer      NOT NULL REFERENCES ops.managers (manager_id)
+    code  varchar(30)  PRIMARY KEY,
+    name  varchar(255) NOT NULL UNIQUE
+);
+
+-- Who managed each branch in each month. Branches rotate between managers
+-- every month, and the workbook's Managers sheet keeps one row per branch per
+-- month. month is the first day of the month (e.g. 2026-10-01).
+CREATE TABLE ops.branch_managers (
+    month        date        NOT NULL CHECK (month = date_trunc('month', month)),
+    branch_code  varchar(30) NOT NULL REFERENCES ops.branches (code),
+    manager_id   integer     NOT NULL REFERENCES ops.managers (manager_id),
+    PRIMARY KEY (month, branch_code)
 );
 
 CREATE TABLE ops.meals (
@@ -58,14 +66,12 @@ CREATE TABLE ops.task_misses (
 );
 
 -- One row per quality issue, tied to the task (date, meal, due time) it was
--- found on. manager_id is the branch's manager on the day it was loaded, so
--- history survives the monthly rotation.
+-- found on. The manager responsible is in branch_managers (branch + month).
 CREATE TABLE ops.quality_issues (
     issue_id     integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     task_id      integer     NOT NULL REFERENCES ops.scheduled_tasks (task_id),
     branch_code  varchar(30) NOT NULL REFERENCES ops.branches (code),
     description  varchar(50) NOT NULL,
-    manager_id   integer     NOT NULL REFERENCES ops.managers (manager_id),
     -- A branch can't get the same description twice on one task (same date,
     -- meal and due time). This also lets a re-run of the load skip rows
     -- that are already in.

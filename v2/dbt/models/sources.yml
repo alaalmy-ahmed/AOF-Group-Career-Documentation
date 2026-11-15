@@ -1,0 +1,15 @@
+# The tables dbt reads: the ops schema the weekly load fills (sql/001_schema.sql).
+# In a model, {{ source('ops', 'branches') }} becomes ops.branches.
+
+sources:
+  - name: ops
+    schema: ops
+    tables:
+      - name: managers
+      - name: branches
+      - name: branch_managers
+        description: Who managed each branch in each month (month = its first day)
+      - name: meals
+      - name: scheduled_tasks
+      - name: task_misses
+      - name: quality_issues

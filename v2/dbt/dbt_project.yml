@@ -1,0 +1,22 @@
+# The dbt project for v2 (step 7): SQL models that turn the ops tables into
+# reporting views for Power BI and the weekly Excel ranking.
+#
+# Run from v2/dbt:   dbt build
+# (builds every model and runs every check; see README.md, step 7)
+
+name: shawarma_classic
+version: "1.0"
+profile: shawarma_classic        # the connection, in profiles.yml next to this file
+
+model-paths: ["models"]          # one .sql file per model
+macro-paths: ["macros"]          # reusable bits of SQL
+test-paths: ["tests"]            # checks written as a query that returns the bad rows
+
+models:
+  shawarma_classic:
+    # A view is a saved query: always up to date with the ops tables, nothing to refresh
+    +materialized: view
+
+flags:
+  send_anonymous_usage_stats: false
+  use_colors: false              # plain text, so the alert emails stay readable

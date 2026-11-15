@@ -29,3 +29,7 @@ output/
 # Python
 __pycache__/
 .ipynb_checkpoints/
+
+# dbt working folders (compiled SQL, run results, logs)
+v2/dbt/target/
+v2/dbt/logs/

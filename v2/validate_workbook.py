@@ -33,7 +33,7 @@ REQUIRED_COLUMNS = {
     "Source Data": ["Date", "Meal", "Due time", "Done Tasks", "Missed Tasks", "Branches Missed Tasks"],
     "Reviewing Reports": ["Date", "Code", "Branch", "Meal", "Due time", "Description", "Manager"],
     "branches and codes": ["Code", "Branch"],
-    "Managers": ["Branch", "Manager"],
+    "Managers": ["Month", "Branch", "Manager"],
     "Fixed Choices": ["Issues"],
     "meals.xlsx": ["Meal"],
 }
@@ -45,7 +45,7 @@ MUST_BE_FILLED = {
     "Source Data": ["Date", "Meal", "Due time", "Done Tasks", "Missed Tasks"],
     "Reviewing Reports": ["Date", "Code", "Branch", "Meal", "Due time", "Description", "Manager"],
     "branches and codes": ["Code", "Branch"],
-    "Managers": ["Branch", "Manager"],
+    "Managers": ["Month", "Branch", "Manager"],
 }
 
 
@@ -68,8 +68,20 @@ def read_workbook():
 
     # Anything that isn't a date becomes blank, and the blank check reports it.
     for name in ["Source Data", "Reviewing Reports"]:
-        sheets[name]["Date"] = pd.to_datetime(sheets[name]["Date"], format="mixed", errors="coerce").dt.date
+        sheets[name]["Date"] = to_dates(sheets[name]["Date"])
+    # Managers: any day in the month works (e.g. 2026-10-01 or Oct 2026); it's
+    # turned into the month's first day.
+    sheets["Managers"]["Month"] = to_dates(sheets["Managers"]["Month"]).map(month_of)
     return sheets
+
+
+def to_dates(column):
+    return pd.to_datetime(column, format="mixed", errors="coerce").dt.date
+
+
+def month_of(day):
+    """The first day of the day's month: 2026-10-26 -> 2026-10-01. Blank stays blank."""
+    return day.replace(day=1) if pd.notna(day) else day
 
 
 def excel_row(index):
@@ -104,7 +116,7 @@ def check_blanks(name, sheet):
     problems = []
     for column in MUST_BE_FILLED[name]:
         for index in sheet.index[sheet[column].isna()]:
-            what = "blank or not a date" if column == "Date" else "blank"
+            what = "blank or not a date" if column in ("Date", "Month") else "blank"
             problems.append(f"{name} row {excel_row(index)}: {column} is {what}")
     return problems
 
@@ -131,21 +143,32 @@ def check_counts(tasks):
 # --------------------------------------------------------------------------------------------------------
 # Stage 3: rules
 
-def check_branch_lists(branches, managers):
-    """Each branch appears once in 'branches and codes' and has exactly one manager."""
+def check_branch_lists(branches, managers, months):
+    """Each branch appears once in 'branches and codes'. In 'Managers', each
+    branch has one manager per month, and every branch has a manager in each
+    of `months` (the months the data being checked falls in)."""
     problems = []
     for column in ["Code", "Branch"]:
         for index in branches.index[branches.duplicated(column)]:
             problems.append(f"branches and codes row {excel_row(index)}: {column} {branches.at[index, column]!r} is listed twice")
 
-    for index in managers.index[managers.duplicated("Branch")]:
-        problems.append(f"Managers row {excel_row(index)}: {managers.at[index, 'Branch']!r} has more than one manager")
+    for index in managers.index[managers.duplicated(["Month", "Branch"])]:
+        problems.append(f"Managers row {excel_row(index)}: {managers.at[index, 'Branch']!r} has more than one "
+                        f"manager in {managers.at[index, 'Month']:%Y-%m}")
     for index, branch in managers["Branch"].items():
         if branch not in set(branches["Branch"]):
             problems.append(f"Managers row {excel_row(index)}: {branch!r} isn't in 'branches and codes'")
-    for index, branch in branches["Branch"].items():
-        if branch not in set(managers["Branch"]):
-            problems.append(f"branches and codes row {excel_row(index)}: {branch!r} has no manager in 'Managers'")
+
+    listed = set(zip(managers["Month"], managers["Branch"]))
+    for month in sorted(months):
+        if month not in set(managers["Month"]):
+            # One message instead of one per branch, e.g. the new month's rows aren't added yet
+            problems.append(f"Managers: no rows for {month:%Y-%m}")
+            continue
+        for index, branch in branches["Branch"].items():
+            if (month, branch) not in listed:
+                problems.append(f"branches and codes row {excel_row(index)}: {branch!r} has no manager "
+                                f"for {month:%Y-%m} in 'Managers'")
     return problems
 
 
@@ -188,7 +211,7 @@ def check_issues(issues, branches, managers, fixed_choices, meals, tasks=None):
     meal_names = set(meals["Meal"].dropna())
     descriptions = set(fixed_choices["Issues"].dropna())
     branch_of_code = dict(zip(branches["Code"], branches["Branch"]))
-    manager_of = dict(zip(managers["Branch"], managers["Manager"]))
+    manager_of = dict(zip(zip(managers["Month"], managers["Branch"]), managers["Manager"]))
     if tasks is not None:
         scheduled = set(zip(tasks["Date"], tasks["Meal"], tasks["Due time"]))
 
@@ -208,9 +231,12 @@ def check_issues(issues, branches, managers, fixed_choices, meals, tasks=None):
         if issue["Description"] not in descriptions:
             problems.append(f"{where}: description {issue['Description']!r} isn't in Fixed Choices")
 
-        expected = manager_of.get(issue["Branch"])
+        # Checked against the issue's own month, so last month's issues keep last month's manager
+        month = month_of(issue["Date"])
+        expected = manager_of.get((month, issue["Branch"]))
         if expected is not None and issue["Manager"] != expected:
-            problems.append(f"{where}: manager is {issue['Manager']!r}, but 'Managers' says {expected!r} for this branch")
+            problems.append(f"{where}: manager is {issue['Manager']!r}, but 'Managers' says {expected!r} "
+                            f"for this branch in {month:%Y-%m}")
 
     # The database would quietly skip a repeated issue, so it's caught here instead.
     key = ["Date", "Code", "Meal", "Due time", "Description"]
@@ -239,7 +265,8 @@ def find_problems(sheets):
     issues = sheets["Reviewing Reports"]
     branches = sheets["branches and codes"]
     managers = sheets["Managers"]
-    return (check_branch_lists(branches, managers)
+    months = {month_of(day) for day in list(tasks["Date"]) + list(issues["Date"])}
+    return (check_branch_lists(branches, managers, months)
             + check_tasks(tasks, branches, sheets["meals.xlsx"])
             + check_issues(issues, branches, managers, sheets["Fixed Choices"], sheets["meals.xlsx"], tasks))
 
@@ -262,7 +289,9 @@ def find_day_problems(sheets, day):
     if problems:
         return problems
 
-    return (check_branch_lists(branches, managers)
+    # That month's managers are needed only if there are issues to check
+    months = {month_of(day)} if len(day_issues) else set()
+    return (check_branch_lists(branches, managers, months)
             + check_issues(day_issues, branches, managers, sheets["Fixed Choices"], sheets["meals.xlsx"]))
 
 

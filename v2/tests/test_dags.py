@@ -76,8 +76,10 @@ def test_tasks_and_order(dags):
     assert daily["distribute_issues"].op_kwargs == {"script": "distribute_issues.py", "days_back": 0}
 
     weekly = dags["weekly_ranking"].task_dict
-    assert weekly["weekly_ranking"].upstream_task_ids == {"load_workbook"}
+    assert weekly["build_models"].upstream_task_ids == {"load_workbook"}
+    assert weekly["weekly_ranking"].upstream_task_ids == {"build_models"}
     assert weekly["load_workbook"].op_kwargs == {"script": "load_workbook.py", "days_back": 1}
+    assert weekly["build_models"].op_kwargs == {"script": "build_models.py", "days_back": 1}
     assert weekly["weekly_ranking"].op_kwargs == {"script": "weekly_ranking.py", "days_back": 1}
 
     for dag in dags.values():

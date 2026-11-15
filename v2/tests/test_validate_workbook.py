@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 import validate_workbook
-from conftest import DAY, write_workbook
+from conftest import DAY, JANUARY, write_workbook
 from validate_workbook import find_day_problems, find_problems, read_workbook
 
 
@@ -98,7 +98,7 @@ def test_description_must_be_in_fixed_choices(sheets):
 def test_manager_must_match_the_managers_sheet(sheets):
     sheets["Reviewing Reports"].loc[0, "Manager"] = "Manager B"
     assert find_problems(sheets) == [
-        "Reviewing Reports row 2: manager is 'Manager B', but 'Managers' says 'Manager A' for this branch"]
+        "Reviewing Reports row 2: manager is 'Manager B', but 'Managers' says 'Manager A' for this branch in 2026-01"]
 
 
 def test_issue_needs_its_task(sheets):
@@ -115,7 +115,55 @@ def test_issue_logged_twice(sheets):
 
 def test_branch_without_a_manager(sheets):
     sheets["Managers"] = sheets["Managers"].drop(index=2)              # Rawdah
-    assert find_problems(sheets) == ["branches and codes row 4: 'Rawdah' has no manager in 'Managers'"]
+    assert find_problems(sheets) == ["branches and codes row 4: 'Rawdah' has no manager for 2026-01 in 'Managers'"]
+
+
+def test_branch_with_two_managers_in_a_month(sheets):
+    managers = sheets["Managers"]
+    extra = pd.DataFrame({"Month": [JANUARY], "Branch": ["Rawdah"], "Manager": ["Manager A"]})
+    sheets["Managers"] = pd.concat([managers, extra], ignore_index=True)
+    assert find_problems(sheets) == ["Managers row 5: 'Rawdah' has more than one manager in 2026-01"]
+
+
+# --------------------------------------------------------------------------------------------------------
+# The monthly rotation: each issue is checked against its own month's managers
+
+def add_december(sheets, issue_manager):
+    """December 2025, before a rotation: Malaz and Olaya had Manager B, Rawdah
+    had Manager A. Adds December's Managers rows, one task, and one issue at
+    Malaz logged with `issue_manager`."""
+    december, day = date(2025, 12, 1), date(2025, 12, 31)
+    sheets["Managers"] = pd.concat([sheets["Managers"], pd.DataFrame({
+        "Month":   [december,    december,    december],
+        "Branch":  ["Malaz",     "Olaya",     "Rawdah"],
+        "Manager": ["Manager B", "Manager B", "Manager A"],
+    })], ignore_index=True)
+    sheets["Source Data"] = pd.concat([sheets["Source Data"], pd.DataFrame({
+        "Date": [day], "Meal": ["Arabi Sop"], "Due time": ["12-4 pm"],
+        "Done Tasks": [3], "Missed Tasks": [0], "Branches Missed Tasks": [None],
+    })], ignore_index=True)
+    sheets["Reviewing Reports"] = pd.concat([sheets["Reviewing Reports"], pd.DataFrame({
+        "Date": [day], "Code": ["B1"], "Branch": ["Malaz"], "Meal": ["Arabi Sop"], "Due time": ["12-4 pm"],
+        "Description": ["Bread not heated"], "Manager": [issue_manager],
+    })], ignore_index=True)
+
+
+def test_last_months_issue_keeps_last_months_manager(sheets):
+    add_december(sheets, issue_manager="Manager B")    # right for December, though January says Manager A
+    assert find_problems(sheets) == []
+
+
+def test_last_months_issue_is_checked_against_last_month(sheets):
+    add_december(sheets, issue_manager="Manager A")    # January's manager on a December issue
+    assert find_problems(sheets) == [
+        "Reviewing Reports row 3: manager is 'Manager A', but 'Managers' says 'Manager B' for this branch in 2025-12"]
+
+
+def test_month_with_data_but_no_managers(sheets):
+    add_december(sheets, issue_manager="Manager B")
+    managers = sheets["Managers"]
+    sheets["Managers"] = managers[managers["Month"] == JANUARY]     # December's rows forgotten
+    assert find_problems(sheets) == ["Managers: no rows for 2025-12"]
 
 
 def test_every_problem_is_listed_at_once(sheets):
@@ -138,12 +186,20 @@ def test_day_check_ignores_tasks_and_other_days(sheets):
     assert find_day_problems(sheets, date(2026, 1, 2)) == []
 
 
+def test_day_check_needs_that_months_managers(sheets):
+    """The 1st of a new month, before the data entry added that month's Managers rows."""
+    first_of_february = date(2026, 2, 1)
+    sheets["Reviewing Reports"].loc[0, "Date"] = first_of_february
+    assert find_day_problems(sheets, first_of_february) == ["Managers: no rows for 2026-02"]
+
+
 # --------------------------------------------------------------------------------------------------------
 # Reading the workbook file
 
 def test_read_workbook_cleans_up(sheets, tmp_path, monkeypatch):
     sheets["Source Data"].loc[1, "Branches Missed Tasks"] = "Olaya  "  # spaces at the end
     sheets["Reviewing Reports"].loc[0, "Branch"] = " Malaz"            # a space at the start
+    sheets["Managers"]["Month"] = "2026-01-15"                         # any day in the month, typed as text
     workbook_path, meals_path = write_workbook(sheets, tmp_path)
     # monkeypatch changes a setting for this test only (tmp_path is a new empty folder)
     monkeypatch.setattr(validate_workbook, "WORKBOOK_PATH", workbook_path)
@@ -152,6 +208,7 @@ def test_read_workbook_cleans_up(sheets, tmp_path, monkeypatch):
     read = read_workbook()
     assert read["Reviewing Reports"].loc[0, "Branch"] == "Malaz"
     assert read["Source Data"].loc[0, "Date"] == DAY                   # a plain date, not a timestamp
+    assert read["Managers"].loc[0, "Month"] == JANUARY                 # turned into the 1st of the month
     assert find_problems(read) == []
 
 
@@ -163,3 +220,13 @@ def test_read_workbook_reports_a_bad_date(sheets, tmp_path, monkeypatch):
     monkeypatch.setattr(validate_workbook, "MEALS_PATH", meals_path)
 
     assert find_problems(read_workbook()) == ["Source Data row 3: Date is blank or not a date"]
+
+
+def test_read_workbook_reports_a_bad_month(sheets, tmp_path, monkeypatch):
+    sheets["Managers"]["Month"] = sheets["Managers"]["Month"].astype(object)
+    sheets["Managers"].loc[0, "Month"] = "Octember"
+    workbook_path, meals_path = write_workbook(sheets, tmp_path)
+    monkeypatch.setattr(validate_workbook, "WORKBOOK_PATH", workbook_path)
+    monkeypatch.setattr(validate_workbook, "MEALS_PATH", meals_path)
+
+    assert find_problems(read_workbook()) == ["Managers row 2: Month is blank or not a date"]

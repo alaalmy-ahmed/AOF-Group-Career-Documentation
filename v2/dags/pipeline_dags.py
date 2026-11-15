@@ -4,7 +4,8 @@ The schedule for the v2 pipeline (step 6), as two Airflow DAGs.
 A DAG is a list of steps (tasks), the order they run in, and when to run.
 
     daily_issues     every day at 11:59 pm      distribute_issues.py
-    weekly_ranking   Wednesdays at 9:00 am      load_workbook.py, then weekly_ranking.py
+    weekly_ranking   Wednesdays at 9:00 am      load_workbook.py, build_models.py (dbt),
+                                                then weekly_ranking.py
 
 Each task runs a script exactly as you would in a terminal, with
 REPORT_DATE set to the day the run is for. After each task, an email says
@@ -115,9 +116,15 @@ with DAG(
         python_callable=run_script,
         op_kwargs={"script": "load_workbook.py", "days_back": 1},
     )
+    models = PythonOperator(
+        task_id="build_models",
+        python_callable=run_script,
+        op_kwargs={"script": "build_models.py", "days_back": 1},
+    )
     ranking = PythonOperator(
         task_id="weekly_ranking",
         python_callable=run_script,
         op_kwargs={"script": "weekly_ranking.py", "days_back": 1},
     )
-    load >> ranking  # the ranking runs only after the load succeeded
+    # Each step runs only if the one before it succeeded
+    load >> models >> ranking

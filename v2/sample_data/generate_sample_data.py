@@ -6,6 +6,9 @@ needs from the data entry, and a separate meal list.
     scheduled task. A meal can be due twice a day (Arabi Sop is here).
   - meals.xlsx is the fixed list of meals the database accepts.
   - No managers.xlsx: v2 reads the managers from the workbook's Managers sheet.
+  - The Managers sheet has a "Month" column, one row per branch per month, so
+    last month's managers aren't lost at the monthly rotation. The sample
+    covers October 2026 only, so every row is that month.
 
 Everything here is made up: managers, branch codes, trainees, employee IDs
 and issues. The workbook mirrors the production file's sheets and columns, and
@@ -39,6 +42,7 @@ MEALS_PATH = os.path.join(HERE, "meals.xlsx")
 SEED = 7
 END_DATE = date(2026, 10, 26)   # last day of data
 DAYS = 14
+SAMPLE_MONTH = pd.Timestamp(END_DATE.replace(day=1))   # the Managers sheet's Month: 2026-10-01
 
 # --------------------------------------------------------------------------------------------------------
 # Reference data (all fictional)
@@ -95,7 +99,7 @@ def build_frames(rng):
         for name in names:
             code = f"FAKE B{len(branches) + 1:02d}"
             branches.append({"Code": code, "Branch": name})
-            managers_long.append({"Branch": name, "Manager": manager})
+            managers_long.append({"Month": SAMPLE_MONTH, "Branch": name, "Manager": manager})
     branches_df = pd.DataFrame(branches)
     managers_df = pd.DataFrame(managers_long)
     branch_to_manager = dict(zip(managers_df["Branch"], managers_df["Manager"]))

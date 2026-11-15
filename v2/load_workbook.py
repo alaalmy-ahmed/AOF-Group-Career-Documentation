@@ -71,7 +71,7 @@ def insert_rows(cur, sql, rows):
 
 
 def load(cur, tasks, issues, branches, managers, meals):
-    # 1. Reference lists: managers, meals, branches
+    # 1. Reference lists: managers, meals, branches, and who managed each branch when
     added = insert_rows(cur, "INSERT INTO ops.managers (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
                         [(name,) for name in managers["Manager"].unique()])
     print(f"managers:        {added} new")
@@ -84,15 +84,25 @@ def load(cur, tasks, issues, branches, managers, meals):
     cur.execute("SELECT name, meal_id FROM ops.meals")
     meal_id = dict(cur.fetchall())                       # {"Arabi Sop": 2, ...}
 
-    # A branch's manager changes with the monthly rotation, so existing
-    # branches are updated rather than skipped.
-    manager_of = dict(zip(managers["Branch"], managers["Manager"]))
-    branch_managers = lookup(manager_of, list(branches["Branch"]), "branches with no manager in the Managers sheet")
+    # A renamed branch is updated. The WHERE skips rows that haven't changed,
+    # so the count shows only real changes.
     added = insert_rows(cur, """
-        INSERT INTO ops.branches (code, name, manager_id) VALUES (%s, %s, %s)
-        ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, manager_id = EXCLUDED.manager_id
-    """, zip(branches["Code"], branches["Branch"], lookup(manager_id, branch_managers, "managers")))
-    print(f"branches:        {added} inserted or updated")
+        INSERT INTO ops.branches (code, name) VALUES (%s, %s)
+        ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name
+        WHERE ops.branches.name <> EXCLUDED.name
+    """, zip(branches["Code"], branches["Branch"]))
+    print(f"branches:        {added} new or changed")
+
+    # Who managed each branch in each month. A corrected name for a month is updated.
+    branch_code = dict(zip(branches["Branch"], branches["Code"]))
+    added = insert_rows(cur, """
+        INSERT INTO ops.branch_managers (month, branch_code, manager_id) VALUES (%s, %s, %s)
+        ON CONFLICT (month, branch_code) DO UPDATE SET manager_id = EXCLUDED.manager_id
+        WHERE ops.branch_managers.manager_id <> EXCLUDED.manager_id
+    """, zip(managers["Month"],
+             lookup(branch_code, list(managers["Branch"]), "branches in the Managers sheet"),
+             lookup(manager_id, list(managers["Manager"]), "managers")))
+    print(f"branch_managers: {added} new or changed")
 
     # 2. Scheduled tasks
     task_meals = lookup(meal_id, list(tasks["meal"]), "meals in Source Data (not in the meal list)")
@@ -107,7 +117,6 @@ def load(cur, tasks, issues, branches, managers, meals):
     task_id = {(d, m, due): t for d, m, due, t in cur.fetchall()}   # {(date, 2, "4-8 pm"): 17, ...}
 
     # 3. Task misses
-    branch_code = dict(zip(branches["Branch"], branches["Code"]))
     misses = split_misses(tasks)
     miss_tasks = lookup(task_id, [(d, meal_id[m], due) for d, m, due, _ in misses], "tasks")
     miss_codes = lookup(branch_code, [b for *_, b in misses], "branches in Branches Missed Tasks")
@@ -121,12 +130,13 @@ def load(cur, tasks, issues, branches, managers, meals):
     issue_meals = lookup(meal_id, list(issues["Meal"]), "meals in Reviewing Reports (not in the meal list)")
     issue_tasks = lookup(task_id, list(zip(issues["Date"], issue_meals, issues["Due time"])),
                          "tasks for these issues (date, meal_id, due time)")
-    issue_managers = lookup(manager_id, list(issues["Manager"]), "managers in Reviewing Reports")
+    # The issue's Manager column isn't stored: the checks made sure it matches
+    # branch_managers for the issue's month.
     added = insert_rows(cur, """
-        INSERT INTO ops.quality_issues (task_id, branch_code, description, manager_id)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO ops.quality_issues (task_id, branch_code, description)
+        VALUES (%s, %s, %s)
         ON CONFLICT (task_id, branch_code, description) DO NOTHING
-    """, zip(issue_tasks, issues["Code"], issues["Description"], issue_managers))
+    """, zip(issue_tasks, issues["Code"], issues["Description"]))
     print(f"quality_issues:  {added} new of {len(issues)}")
 
 

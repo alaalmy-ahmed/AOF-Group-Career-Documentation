@@ -1,0 +1,9 @@
+# dbt for step 7, in its OWN virtual environment: its packages clash with
+# Airflow's (both pin "pathspec"). See README.md, step 7.
+#
+#   python3 -m venv ~/dbt-venv
+#   ~/dbt-venv/bin/pip install -r v2/dbt/requirements.txt
+#
+# Then set DBT_EXECUTABLE=~/dbt-venv/bin/dbt (full path) in airflow.env.
+dbt-core>=1.12
+dbt-postgres>=1.11

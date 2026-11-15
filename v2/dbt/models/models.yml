@@ -1,0 +1,86 @@
+# What each model means, column by column, and the checks dbt runs on the
+# real data every time it builds (data_tests). A check fails if it finds any
+# row that breaks it.
+
+models:
+  - name: branch_daily
+    description: >
+      One row per branch per day with tasks: tasks due, missed and submitted,
+      the submission rate, and quality issues, with the manager who ran the
+      branch that month.
+    data_tests:
+      # One row per branch per day
+      - unique:
+          column_name: "task_date || ' ' || branch_code"
+    columns:
+      - name: task_date
+        data_tests: [not_null]
+      - name: branch_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: source('ops', 'branches')
+                field: code
+      - name: manager
+        description: The branch's manager that month (ops.branch_managers)
+        data_tests: [not_null]
+      - name: tasks_due
+        description: Scheduled tasks that day. Every branch is due every task.
+      - name: tasks_missed
+      - name: tasks_submitted
+      - name: submission_rate
+        description: >
+          100 - missed / due * 100, rounded to 1 decimal. For a week or a month,
+          add up the counts and divide; don't average this column.
+      - name: quality_issues
+
+  - name: branch_weekly_ranking
+    description: >
+      The weekly branch ranking for every Wednesday-Tuesday week (docs/metrics.md).
+      weekly_ranking.py writes one week of it to Excel.
+    data_tests:
+      # One row per branch per week
+      - unique:
+          column_name: "week_end || ' ' || branch_code"
+    columns:
+      - name: week_end
+        description: The Tuesday that ends the week
+        data_tests: [not_null]
+      - name: manager
+        description: The branch's manager on the week's last day
+        data_tests: [not_null]
+      - name: done_rate
+      - name: branches_rank
+        description: 1 = best. Ties share a rank, and the next rank is skipped.
+        data_tests: [not_null]
+      - name: completion_grade
+        description: Excellent above 0.95, Good above 0.90, Fair above 0.80, Bad above 0.70, then Terrible
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Excellent", "Good", "Fair", "Bad", "Terrible"]
+      - name: score
+        description: Rounded to 4 decimals for reading. The rank and grade use the exact score.
+
+  - name: manager_weekly_ranking
+    description: The weekly manager ranking, from branch_weekly_ranking
+    data_tests:
+      - unique:
+          column_name: "week_end || ' ' || manager"
+    columns:
+      - name: managers_rank
+        data_tests: [not_null]
+
+  - name: manager_monthly_ranking
+    description: >
+      The monthly manager ranking: each branch counts for the manager who ran
+      it that month.
+    data_tests:
+      - unique:
+          column_name: "month || ' ' || manager"
+    columns:
+      - name: month
+        description: The month's first day
+      - name: managers_rank
+        data_tests: [not_null]

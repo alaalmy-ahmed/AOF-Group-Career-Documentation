@@ -27,6 +27,10 @@ OUTPUT_DIR = os.getenv("OUTPUT_DIR", os.path.join(HERE, "output"))
 # today's data is still coming in. Example: REPORT_DATE=2026-10-26
 REPORT_DATE = date.fromisoformat(os.getenv("REPORT_DATE") or str(date.today() - timedelta(days=1)))
 
+# The dbt program (step 7). dbt has its own Python environment, so this is
+# usually its full path, e.g. /Users/you/dbt-venv/bin/dbt
+DBT_EXECUTABLE = os.getenv("DBT_EXECUTABLE", "dbt")
+
 # The schedule (step 6) makes up every scheduled run from this day on. Set
 # it to the day you switch the schedule on, so it doesn't redo days that
 # were handled by hand.
