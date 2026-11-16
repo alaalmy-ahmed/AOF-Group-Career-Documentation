@@ -71,6 +71,43 @@ models:
     columns:
       - name: managers_rank
         data_tests: [not_null]
+      - name: completion_grade
+        description: From the manager's score, with the branches' thresholds (since step 9)
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Excellent", "Good", "Fair", "Bad", "Terrible"]
+
+  - name: weekly_kpis
+    description: >
+      The two KPIs for all branches together, one row per Wednesday-Tuesday
+      week. The weekly dashboard's headline numbers (step 9).
+    columns:
+      - name: week_end
+        description: The Tuesday that ends the week
+        data_tests: [unique, not_null]
+      - name: tasks_due
+        description: Every branch's tasks added up (each branch is due every task)
+      - name: submission_rate
+        description: 100 - missed / due * 100 for the whole week, rounded to 1 decimal
+        data_tests: [not_null]
+      - name: quality_issues
+
+  - name: branch_meal_weekly
+    description: >
+      Each branch's meals, week by week: tasks due, missed, and quality issues.
+      The weekly dashboard lists the meals with a problem under each branch.
+    data_tests:
+      # One row per branch per meal per week
+      - unique:
+          column_name: "week_end || ' ' || branch_code || ' ' || meal"
+    columns:
+      - name: week_end
+        data_tests: [not_null]
+      - name: tasks_due
+        description: The meal's tasks that week. Every branch is due every task.
+      - name: tasks_missed
+      - name: quality_issues
 
   - name: manager_monthly_ranking
     description: >

@@ -8,10 +8,12 @@ The original system (v1) is at the top of this repository, unchanged; git tag `v
 | 2. Safe re-runnable loads | Done | [load_workbook.py](load_workbook.py) loads the workbook into the schema; a re-run adds nothing twice |
 | 3. Validation before loading | Done | [validate_workbook.py](validate_workbook.py) checks the workbook and lists every problem; the load runs it first |
 | 4. Notebooks → Python modules | Done | The daily distribution and the weekly ranking are scripts; all settings are in [settings.py](settings.py) |
-| 5. Tests | Done | 70 pytest tests in [tests/](tests): checks, intake folder, daily files, load, dbt build, schedule |
+| 5. Tests | Done | 92 pytest tests in [tests/](tests): checks, intake folder, daily files, load, dbt build, schedule, dashboard |
 | 6. Scheduling and alerts | Done | Airflow runs the scripts on a schedule and emails the result of each step: [dags/pipeline_dags.py](dags/pipeline_dags.py) |
 | 7. dbt models | Done | Reporting views built and tested by dbt: daily branch KPIs, weekly and monthly rankings, in [dbt/](dbt) |
 | 8. Replacing the Excel intake | Done | The entry person's daily files go into an intake folder and are read from there; only the last 10 days are kept |
+| 9. Weekly dashboard | Done | A web page for the area managers instead of the Power BI weekly report: rankings with coloured grades, then manager → branches → meals: [weekly_dashboard.py](weekly_dashboard.py) |
+| 10. Monthly, quarterly and yearly dashboards | Planned | The other three Power BI reports, for management on computers, with interactive charts |
 
 ## Running v2
 
@@ -31,8 +33,9 @@ Each day, drop the entry person's daily file into the intake folder (`INTAKE_DIR
 | Weekly | `python v2/load_workbook.py` | Checks every daily file, loads them into the database, then deletes files older than `KEEP_DAYS` days |
 | Weekly, after the load | `python v2/build_models.py` | dbt builds the reporting views and runs their checks |
 | Weekly, after dbt | `python v2/weekly_ranking.py` | Branch and manager ranking for the last Wednesday–Tuesday week, to Excel |
+| Weekly, after dbt | `python v2/weekly_dashboard.py` | The weekly dashboard for the same week: one HTML file |
 
-On the sample data, add `REPORT_DATE=2026-10-26` (its last day) in front of the daily and ranking commands.
+On the sample data, add `REPORT_DATE=2026-10-26` (its last day) in front of the daily, ranking and dashboard commands.
 
 To run the tests: `pytest v2` (see step 5). To have Airflow run the scripts on a schedule, see step 6.
 
@@ -161,7 +164,7 @@ Each file imports what it needs from the others (for example, `from settings imp
 pytest v2                                                     # no database needed
 createdb shawarma_classic_test                                # once
 TEST_PGDATABASE=shawarma_classic_test pytest v2               # adds the database tests
-TEST_PGDATABASE=shawarma_classic_test DBT_EXECUTABLE=~/dbt-venv/bin/dbt pytest v2   # all 70, dbt too (step 7)
+TEST_PGDATABASE=shawarma_classic_test DBT_EXECUTABLE=~/dbt-venv/bin/dbt pytest v2   # all 92, dbt too (step 7)
 ```
 
 A test runs a piece of the pipeline on input where the right answer is known, and fails if the answer changes. Run them after every change: if something breaks, a test names it before it reaches the reports.
@@ -170,9 +173,10 @@ A test runs a piece of the pipeline on input where the right answer is known, an
 |---|---|---|
 | [test_validate_workbook.py](tests/test_validate_workbook.py) | Every check: a clean workbook passes, each mistake gives its exact message and Excel row, later stages wait for earlier ones, the daily check ignores tasks and other days | A tiny workbook (3 branches, 2 tasks, 1 issue), with one thing broken per test |
 | [test_weekly_ranking.py](tests/test_weekly_ranking.py) | Which week the Excel ranking is for. (The ranking math was tested here until step 7 moved it into dbt; its tests are now dbt unit tests.) | Dates |
+| [test_weekly_dashboard.py](tests/test_weekly_dashboard.py) | The weekly dashboard (step 9): the wording, no JavaScript on the page, the grade colours, names escaped, each manager's branches and each branch's meals, the first week | A tiny made-up week (2 managers, 3 branches) |
 | [test_intake.py](tests/test_intake.py) | The intake folder (step 8): any file name, lock and hidden files skipped, problems named with their file, the same day in two files, deleting only files older than `KEEP_DAYS` days | The tiny workbook, saved as daily files |
 | [test_distribute_issues.py](tests/test_distribute_issues.py) | One file per branch in its manager's folder, the right rows, each photo on its own row and the same picture as in the day's file; a mistake writes nothing; a missing day's file stops the run | The sample's daily files (the only ones with in-cell photos) |
-| [test_database.py](tests/test_database.py) | A second load adds nothing, a failed load saves nothing, a corrected manager is updated, old files are deleted only after a successful load, dbt builds with every check passing, the daily KPIs and the weekly Excel files add up to the daily files | A copy of the sample's daily files, in a test database |
+| [test_database.py](tests/test_database.py) | A second load adds nothing, a failed load saves nothing, a corrected manager is updated, old files are deleted only after a successful load, dbt builds with every check passing, the daily KPIs, the weekly Excel files and the weekly dashboard add up to the daily files | A copy of the sample's daily files, in a test database |
 
 The tiny workbook is built in [conftest.py](tests/conftest.py), a file pytest loads by itself. Each test gets a fresh copy.
 
@@ -187,7 +191,7 @@ The database tests are skipped unless `TEST_PGDATABASE` is set. The name must co
 | DAG | When (Riyadh time) | Steps, in order | Report date |
 |---|---|---|---|
 | `daily_issues` | Every day, 11:59 pm | `distribute_issues.py` | That day |
-| `weekly_ranking` | Wednesdays, 9:00 am | `load_workbook.py`, `build_models.py` (dbt, step 7), then `weekly_ranking.py` | The day before, so the ranking covers last Wednesday to Tuesday |
+| `weekly_ranking` | Wednesdays, 9:00 am | `load_workbook.py`, `build_models.py` (dbt, step 7), then `weekly_ranking.py` and `weekly_dashboard.py` (step 9) side by side | The day before, so the ranking covers last Wednesday to Tuesday |
 
 A DAG is Airflow's word for a list of steps (tasks), the order they run in, and when.
 
@@ -225,8 +229,8 @@ Leave that terminal open. Open <http://localhost:8080> and log in as `admin` wit
 - **Each task runs a script as you would in a terminal**, for example `REPORT_DATE=2026-11-12 python distribute_issues.py`. The script's exit code decides the result: 0 is success, 1 is failure (steps 3 and 4).
 - **Each run knows which day it's for.** Airflow stamps every run with its scheduled time, and the task turns that into `REPORT_DATE`, in Riyadh time whatever the Mac's clock is set to. So re-running an old run redoes that day, not today. A run started by hand (the ▶ button) uses the time it's started.
 - **Missed days are made up.** If Airflow wasn't running at a scheduled time (the Mac was off), it runs each missed day when it's back, oldest first, one at a time. It counts from `SCHEDULE_START_DATE` in `airflow.env`: set it to the day you switch the schedule on.
-- **Each weekly step waits for the one before** (`load >> models >> ranking`). If one fails, the steps after it are skipped.
-- **An email after every step:** `OK` with what the script printed, or `FAILED` with the error. That's one email a day, and three more on Wednesdays. If none arrives, Airflow isn't running.
+- **Each weekly step waits for the one before** (`load >> models >> [ranking, dashboard]`: the Excel ranking and the dashboard both start once dbt is done). If one fails, the steps after it are skipped.
+- **An email after every step:** `OK` with what the script printed, or `FAILED` with the error. That's one email a day, and four more on Wednesdays. If none arrives, Airflow isn't running.
 - **No automatic retries:** a mistake in the workbook won't fix itself. Fix it, then click *Clear* on the failed run in Airflow to run it again for its own day.
 
 A failure email looks like this:
@@ -271,8 +275,10 @@ No files were written.
 |---|---|---|
 | [branch_daily](dbt/models/branch_daily.sql) | Branch per day | Tasks due, missed and submitted, submission rate, quality issues, and that month's manager. The weekly, monthly, quarterly and yearly reports can add these rows up |
 | [branch_weekly_ranking](dbt/models/branch_weekly_ranking.sql) | Branch per Wednesday–Tuesday week | Done rate, issues, score, rank and grade, for every week so far |
-| [manager_weekly_ranking](dbt/models/manager_weekly_ranking.sql) | Manager per week | The weekly manager ranking. A branch counts for its manager on the week's last day |
+| [manager_weekly_ranking](dbt/models/manager_weekly_ranking.sql) | Manager per week | The weekly manager ranking. A branch counts for its manager on the week's last day. Since step 9, with a grade |
 | [manager_monthly_ranking](dbt/models/manager_monthly_ranking.sql) | Manager per month | The same method over a month, with the manager who ran each branch that month |
+| [weekly_kpis](dbt/models/weekly_kpis.sql) | Week | The two KPIs for all branches together: the weekly dashboard's headline numbers (added in step 9) |
+| [branch_meal_weekly](dbt/models/branch_meal_weekly.sql) | Branch, meal and week | Tasks due, missed, and quality issues: the meals under each branch on the weekly dashboard (added in step 9) |
 
 The method is the one in [metrics.md](../docs/metrics.md). `weekly_ranking.py` now only picks one week from the two weekly views and writes the Excel files; it no longer does any maths.
 
@@ -284,15 +290,18 @@ The method is the one in [metrics.md](../docs/metrics.md). `weekly_ranking.py` n
 | [dbt/models/models.yml](dbt/models/models.yml) | What each model and column means, and the data checks |
 | [dbt/models/unit_tests.yml](dbt/models/unit_tests.yml) | The unit tests |
 | [dbt/macros/share_of_max.sql](dbt/macros/share_of_max.sql) | "Divide by the group's largest value", used by all three rankings |
+| [dbt/macros/week_end.sql](dbt/macros/week_end.sql) | The Tuesday that ends a day's week, used by every weekly view (added in step 9) |
+| [dbt/macros/grade.sql](dbt/macros/grade.sql) | The five grades from a score, used by the branch and manager rankings (added in step 9) |
 | [dbt/tests/submissions_match_the_workbook.sql](dbt/tests/submissions_match_the_workbook.sql) | A check written as a query that returns the rows that break it |
+| [dbt/tests/weekly_counts_agree.sql](dbt/tests/weekly_counts_agree.sql) | The same kind of check for the dashboard: its totals agree at every level, every week (added in step 9) |
 | [build_models.py](build_models.py) | Runs `dbt build`; the weekly Airflow run calls it between the load and the ranking |
 
 ### Checks, every time dbt runs
 
-`dbt build` builds each view and checks it before anything that depends on it. If a check fails, the views after it aren't built, the weekly run's email says which check failed, and the ranking step is skipped.
+`dbt build` builds each view and checks it before anything that depends on it. If a check fails, the views after it aren't built, the weekly run's email says which check failed, and the ranking and dashboard steps are skipped.
 
-- **10 unit tests:** a few made-up rows in, the exact rows expected out, worked out on paper in each test's description. They cover the tiny week from step 5, ties, a week with no issues, a score of exactly 0.95, each week ranked on its own, the Wednesday–Tuesday weeks, a week that spans a rotation, the managers' 85/15 weights, and the monthly ranking following the rotation.
-- **15 data checks on the real data:** one row per branch per day (and per week and month), no missing managers or ranks, only the five grades, every branch code known, and submissions that add up to the workbook's own *Done Tasks* on every day.
+- **12 unit tests:** a few made-up rows in, the exact rows expected out, worked out on paper in each test's description. They cover the tiny week from step 5, ties, a week with no issues, a score of exactly 0.95, each week ranked on its own, the Wednesday–Tuesday weeks, a week that spans a rotation, the managers' 85/15 weights, and the monthly ranking following the rotation. Step 9 added two (the week's KPIs from counts, and each branch's meals) and checks the managers' grades.
+- **22 data checks on the real data:** one row per branch per day (and per week and month), no missing managers or ranks, only the five grades, every branch code known, and submissions that add up to the workbook's own *Done Tasks* on every day. Step 9 added seven, for its two views, the managers' grades and the totals.
 
 ### Who managed a branch, month by month
 
@@ -384,3 +393,75 @@ Why not have a script copy his rows into `07-2024.xlsx` instead: Python's Excel 
 - If the Mac is off for more than 10 days, the weekly catch-up run can delete files that the daily catch-up runs for those days still need. Those daily runs then fail with "No file", and their emails say so.
 - His file must keep the sheets *Source Data* and *Reviewing Reports* with the same columns.
 - Photos older than 10 days are deleted with their files, as decided. The database never kept photos.
+
+## Step 9: the weekly dashboard
+
+The Power BI weekly report is replaced by a web page built for the area managers. The weekly run makes it by itself: `Weekly Report 2026-10-14 to 2026-10-20.html` in the output folder, next to the Excel ranking. Send it the way the PDF went. It's one file of about 30 KB that opens in any browser, offline, with nothing to install and no login.
+
+It isn't a copy of the Power BI report. It's built around who and what, the same way for both KPIs:
+
+```
+manager  →  their branches  →  the meals where a branch missed a task or had a quality issue
+```
+
+| Part of the page | Shows | Read from (dbt view) |
+|---|---|---|
+| Two headline numbers | The week's submission rate and quality issues for all branches, with the change since the week before | `weekly_kpis` (new) |
+| Manager ranking | Rank, grade, branches, % submitted, issues, and places moved since last week | `manager_weekly_ranking` |
+| Branch ranking | Rank, grade, manager, % submitted, issues, and places moved | `branch_weekly_ranking` |
+| By manager | Tap a manager to see their branches, then tap a branch to see its problem meals ("Arabi Sop: 2 issues · 1 missed") | `branch_meal_weekly` (new) |
+
+### Colours that say good or bad
+
+Each grade has its own colour, from best to worst. The word is always written too, so colour isn't the only signal:
+
+| Grade | Colour |
+|---|---|
+| Excellent | Dark green |
+| Good | Light green |
+| Fair | Yellow |
+| Bad | Orange |
+| Terrible | Red |
+
+**Managers now get a grade too**, from the score their ranking already computes, with the branches' thresholds ([metrics.md](../docs/metrics.md#rank-and-grade)). v1 only ranked them. Changes since last week are green when better and red when worse, with ▲ ▼ arrows. The other colours (navy, orange) come from the Power BI theme.
+
+### Simple, and no JavaScript
+
+- **Area managers read it on their phones, from an attachment.** On an iPhone, tapping an attachment in WhatsApp or Mail opens a preview that doesn't run JavaScript, and Safari won't open a file saved on the phone. So the page is plain HTML: no JavaScript and no pictures.
+- **"Tap to open" is HTML's own `<details>` element.** It needs no JavaScript, but whether the iPhone preview lets you tap it is untested (see Known limits).
+- **No charts.** The first version had three (tasks by day, issues by meal, issues by branch). They repeated what the rankings and *By manager* show, so they were removed. With them went matplotlib.
+- **Made for a phone:** one column, two headline numbers side by side, and rankings with three columns (rank, name, change). The grade and numbers sit on a second line under the name.
+
+### Keeping the numbers right
+
+- **The dashboard only reads the dbt views and picks rows. The formulas live in dbt, once.** So it shows the same numbers as the Excel ranking.
+- **Two new views.** `weekly_kpis` holds the week's two KPIs for all branches; the counts are added up first, then divided. `branch_meal_weekly` has one row per branch, meal and week: tasks due, missed, and issues.
+- **Two new macros.** `week_end` holds the Wednesday–Tuesday rule, and `grade` holds the five grades. Each is written once, and used by every view that needs it.
+- **A new dbt check, `weekly_counts_agree`:** every week, the issues add up to the same total in the headline, the branch ranking and the meals, and the missed tasks in the headline and the meals.
+
+### Running it
+
+```bash
+python v2/weekly_dashboard.py
+REPORT_DATE=2026-10-26 python v2/weekly_dashboard.py        # the sample's full week, Oct 14-20
+```
+
+In Airflow it's a fourth step in the Wednesday run. It starts once dbt has built the views, side by side with the Excel ranking, and sends its own email.
+
+### Tested
+
+- **In a browser at phone size (375 px wide) and computer size:** no sideways scrolling, no JavaScript on the page, and tapping opens a manager, then a branch.
+- **In Airflow:** the weekly run on the sample did the load, then dbt, then the Excel ranking and the dashboard. (This was with the first version of the page. The task itself hasn't changed.)
+- **Tests:**
+  - [test_weekly_dashboard.py](tests/test_weekly_dashboard.py) is new: 20 tests, no database needed. They check the wording, the five grade colours, names escaped, each manager holding exactly their branches in rank order, each branch listing only its own problem meals, and the first week.
+  - `test_database.py` builds the sample's dashboard and checks it against the daily files: the submission rate, the issues and their change since last week, every branch's missed tasks and issues meal by meal, and last week's rank for every branch and manager.
+  - dbt: unit tests for the two new views and for the managers' grades, and new checks on the new views and the totals.
+- **Planted bugs:** 17 bugs, one at a time. For example: Excellent coloured red, a branch shown under the wrong manager, another branch's meals shown, a single missed task not shown, meals with no problem listed, more issues shown as good news, last week's rank taken from this week, a miss counted on every meal, and managers graded on their done rate instead of their score. Each one made a test fail.
+  - One got past the first version of the tests: managers graded on their done rate. In that unit test, a 95% done rate and a 0.95 score both mean Good, so nothing changed. A second unit test now checks a manager with a 100% done rate who scores 0.85, and is Fair.
+
+**Known limits:**
+- **Not tested on a real iPhone.** That the preview doesn't run JavaScript is what people consistently report. There's no Xcode on this Mac, so there's no iPhone simulator to try it. Whether the preview lets you tap to open is also untested. Check both once: send yourself the sample dashboard on WhatsApp and open it on an iPhone and on an Android phone. If tapping doesn't work there, the fix is one word: `<details open>` shows everything open.
+- **"vs last week" needs last week in the database.** Like the PDF, the page is a snapshot of one week, so the first week after going live says "no data for last week".
+- **The sample's last week is partial.** The week before Oct 14–20 only has Oct 13, so issues seem to jump from 8 to 45. Real weeks are full.
+- **The Excel managers summary has no grade column.** It keeps the columns it has always had.
+- **No dark mode:** the page stays light, like the PDF.

@@ -1,6 +1,7 @@
 """
 Tests that need Postgres: the load (load_workbook.py), the dbt models
-(build_models.py) and the weekly Excel ranking (weekly_ranking.py). They run
+(build_models.py), the weekly Excel ranking (weekly_ranking.py) and the weekly
+dashboard (weekly_dashboard.py). They run
 on a copy of the sample's daily files in a test database, and are skipped
 unless TEST_PGDATABASE is set (see the `database` fixture in conftest.py).
 The dbt tests are also skipped when dbt isn't installed (DBT_EXECUTABLE).
@@ -8,6 +9,7 @@ The dbt tests are also skipped when dbt isn't installed (DBT_EXECUTABLE).
 
 import os
 import shutil
+from collections import Counter
 from datetime import date
 
 import pandas as pd
@@ -16,6 +18,7 @@ import pytest
 
 import build_models
 import load_workbook
+import weekly_dashboard
 import weekly_ranking
 from conftest import count_rows
 from validate_workbook import read_intake, split_names
@@ -129,6 +132,7 @@ def built(database, monkeypatch):
         pytest.skip(f"dbt not found (DBT_EXECUTABLE={build_models.DBT_EXECUTABLE!r})")
     monkeypatch.setattr(load_workbook, "DATABASE", database)
     monkeypatch.setattr(weekly_ranking, "DATABASE", database)
+    monkeypatch.setattr(weekly_dashboard, "DATABASE", database)
     monkeypatch.setenv("PGDATABASE", database)              # dbt reads it from profiles.yml
     load_workbook.main()
     with pytest.raises(SystemExit) as exit_code:
@@ -182,4 +186,59 @@ def test_a_week_with_no_data_stops(built, tmp_path, monkeypatch):
     monkeypatch.setattr(weekly_ranking, "REPORT_DATE", date(2026, 11, 10))
     with pytest.raises(SystemExit):
         weekly_ranking.main()
+    assert not (tmp_path / "out").exists()
+
+
+# --------------------------------------------------------------------------------------------------------
+# The weekly dashboard (step 9)
+
+def in_week(table, start, end):
+    return table[(table["Date"] >= start) & (table["Date"] <= end)]
+
+
+def test_weekly_dashboard_matches_the_daily_files(built, tmp_path, monkeypatch):
+    monkeypatch.setattr(weekly_dashboard, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(weekly_dashboard, "REPORT_DATE", date(2026, 10, 26))     # a Monday: the week Oct 14-20
+    weekly_dashboard.main()
+    page = (tmp_path / "Weekly Report 2026-10-14 to 2026-10-20.html").read_text(encoding="utf-8")
+
+    # The week's KPIs, counted straight from the daily files
+    tasks, issues, branch_list = sample_tables()
+    week_tasks = in_week(tasks, date(2026, 10, 14), date(2026, 10, 20))
+    week_issues = in_week(issues, date(2026, 10, 14), date(2026, 10, 20))
+    due = len(week_tasks.drop_duplicates(["Date", "Meal", "Due time"])) * len(branch_list)   # every branch, every task
+    missed = week_tasks["Branches Missed Tasks"].map(lambda cell: len(split_names(cell))).sum()
+    rate = 100 - round(100 * missed / due, 1)
+
+    assert f'<div class="value">{rate:g}%</div>' in page
+    assert f'<div class="value">{len(week_issues)}</div>' in page
+    # The week before (the sample only has its last day, Oct 13)
+    last_week_issues = in_week(issues, date(2026, 10, 7), date(2026, 10, 13))
+    assert f"▲ {len(week_issues) - len(last_week_issues)} vs last week" in page
+
+    # Under each branch, its meals with a missed task or an issue
+    code_of = dict(zip(branch_list["Branch"], branch_list["Code"]))
+    missed_by = Counter((code_of[name], meal)                       # {(branch code, meal): times missed}
+                        for meal, cell in zip(week_tasks["Meal"], week_tasks["Branches Missed Tasks"])
+                        for name in split_names(cell))
+    issues_by = Counter(zip(week_issues["Code"], week_issues["Meal"]))
+    expected = {key: (missed_by[key], issues_by[key]) for key in missed_by | issues_by}
+    week = weekly_dashboard.read_week(date(2026, 10, 20))
+    shown = {(m.branch_code, m.meal): (m.missed, m.issues) for m in week["meals"].itertuples()}
+    assert shown == expected
+    assert len(week["branches"]) == len(branch_list) and len(week["managers"]) == 10
+
+    # "vs last week" uses each branch's and manager's real rank from the week before
+    last_week = weekly_dashboard.read_week(date(2026, 10, 13))
+    for table, name in (("branches", "branch"), ("managers", "manager")):
+        shown = dict(zip(week[table][name], week[table]["last_rank"]))
+        actual = dict(zip(last_week[table][name], last_week[table]["rank"]))
+        assert shown == actual
+
+
+def test_a_dashboard_week_with_no_data_stops(built, tmp_path, monkeypatch):
+    monkeypatch.setattr(weekly_dashboard, "OUTPUT_DIR", str(tmp_path / "out"))
+    monkeypatch.setattr(weekly_dashboard, "REPORT_DATE", date(2026, 11, 10))
+    with pytest.raises(SystemExit):
+        weekly_dashboard.main()
     assert not (tmp_path / "out").exists()

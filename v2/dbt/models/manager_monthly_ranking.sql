@@ -42,5 +42,6 @@ select
     issues_per_branch,
     number_of_issues,
     rank() over (partition by month order by score desc) as managers_rank,
+    {{ grade('score') }} as completion_grade,      -- the branches' grades (macros/grade.sql), since step 9
     round(score, 4) as score    -- for reading; the rank and grade use the exact score
 from scored

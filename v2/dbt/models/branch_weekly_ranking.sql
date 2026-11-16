@@ -9,8 +9,7 @@
 with days as (
     select
         *,
-        -- The Tuesday that ends this day's week (isodow: Monday = 1 ... Sunday = 7)
-        task_date + ((9 - extract(isodow from task_date)::int) % 7) as week_end
+        {{ week_end('task_date') }} as week_end     -- the Tuesday that ends this day's week (macros/week_end.sql)
     from {{ ref('branch_daily') }}
 ),
 
@@ -49,12 +48,6 @@ select
     done_rate,
     number_of_issues,
     rank() over (partition by week_end order by score desc) as branches_rank,
-    case
-        when score > 0.95 then 'Excellent'
-        when score > 0.90 then 'Good'
-        when score > 0.80 then 'Fair'
-        when score > 0.70 then 'Bad'
-        when score > 0 then 'Terrible'
-    end as completion_grade,
+    {{ grade('score') }} as completion_grade,      -- macros/grade.sql
     round(score, 4) as score    -- for reading; the rank and grade use the exact score
 from scored

@@ -66,6 +66,7 @@ v1 works, but the notebooks are started by hand, nothing reports a failed run, a
 | 6 | Airflow runs the daily and weekly jobs on a schedule and emails the result of each step |
 | 7 | dbt builds tested reporting views: daily branch KPIs, weekly and monthly rankings |
 | 8 | The entry person's daily files go into an intake folder and are read from there; only the last 10 days are kept |
+| 9 | A web page for the area managers replaces the Power BI weekly report: rankings with coloured grades, then each manager's branches and their problem meals. Made for phones, with no JavaScript |
 
 Design decisions, and how each step was tested: [v2/README.md](v2/README.md).
 
@@ -115,7 +116,7 @@ One piece was added for this portfolio and isn't used at AOF: the **SQL version 
 | [notebooks/](notebooks) | The daily and weekly notebooks |
 | [sample_data/](sample_data) | Fake workbook and managers file, plus [the script that generates them](sample_data/generate_sample_data.py) |
 | [sql/](sql) | Table definitions, the [weekly ranking in SQL](sql/ranking.sql) (functions and views), and the production schema exports in `sql/production/` |
-| [v2/](v2) | The rebuild: scripts, tests, Airflow DAGs and dbt models ([v2/README.md](v2/README.md)) |
+| [v2/](v2) | The rebuild: scripts, tests, Airflow DAGs, dbt models and the weekly dashboard ([v2/README.md](v2/README.md)) |
 
 ## Documentation
 

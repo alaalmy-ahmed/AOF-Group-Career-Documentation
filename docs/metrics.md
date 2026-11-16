@@ -38,6 +38,8 @@ Task completion carries most of the weight. Issues count for a little more at ma
 | 0.70 – 0.80 | Bad |
 | ≤ 0.70 | Terrible |
 
+In v1 only branches get a grade. Since v2 [step 9](../v2/README.md#step-9-the-weekly-dashboard), managers get one too, from their own score with the same thresholds, so the weekly dashboard can colour both rankings.
+
 ## Two implementations
 
 Production computes the ranking in pandas. For this portfolio I also wrote it in SQL, with the same method:

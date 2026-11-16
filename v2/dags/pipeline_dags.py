@@ -5,7 +5,7 @@ A DAG is a list of steps (tasks), the order they run in, and when to run.
 
     daily_issues     every day at 11:59 pm      distribute_issues.py
     weekly_ranking   Wednesdays at 9:00 am      load_workbook.py, build_models.py (dbt),
-                                                then weekly_ranking.py
+                                                then weekly_ranking.py and weekly_dashboard.py
 
 Each task runs a script exactly as you would in a terminal, with
 REPORT_DATE set to the day the run is for. After each task, an email says
@@ -126,5 +126,11 @@ with DAG(
         python_callable=run_script,
         op_kwargs={"script": "weekly_ranking.py", "days_back": 1},
     )
-    # Each step runs only if the one before it succeeded
-    load >> models >> ranking
+    dashboard = PythonOperator(
+        task_id="weekly_dashboard",
+        python_callable=run_script,
+        op_kwargs={"script": "weekly_dashboard.py", "days_back": 1},
+    )
+    # Each step runs only if the one before it succeeded. The Excel ranking and
+    # the dashboard both need only the dbt views, so they run side by side.
+    load >> models >> [ranking, dashboard]

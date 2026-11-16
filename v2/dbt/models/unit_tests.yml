@@ -175,7 +175,7 @@ unit_tests:
     description: >
       X: done rate (100 + 90) / 2 = 95.0, issues per branch (0 + 2) / 2 = 1.0.
       Y: done rate (80 + 100) / 2 = 90.0, issues per branch (0 + 4) / 2 = 2.0.
-      X scores 0.85 * 1 + 0.15 * (1 - 0.5) = 0.925; Y scores 0.85 * 90/95 + 0.15 * 0 = 0.805.
+      X scores 0.85 * 1 + 0.15 * (1 - 0.5) = 0.925 (Good); Y scores 0.85 * 90/95 + 0.15 * 0 = 0.805 (Fair).
     model: manager_weekly_ranking
     given:
       - input: ref('branch_weekly_ranking')
@@ -186,14 +186,16 @@ unit_tests:
           - {week_start: 2025-12-31, week_end: 2026-01-06, manager: Y, done_rate: 100.0, number_of_issues: 4}
     expect:
       rows:
-        - {manager: X, branches: 2, done_rate: 95.0, issues_per_branch: 1.0, number_of_issues: 2, managers_rank: 1}
-        - {manager: Y, branches: 2, done_rate: 90.0, issues_per_branch: 2.0, number_of_issues: 4, managers_rank: 2}
+        - {manager: X, branches: 2, done_rate: 95.0, issues_per_branch: 1.0, number_of_issues: 2, managers_rank: 1, completion_grade: Good}
+        - {manager: Y, branches: 2, done_rate: 90.0, issues_per_branch: 2.0, number_of_issues: 4, managers_rank: 2, completion_grade: Fair}
 
   - name: issues_weigh_15_percent_for_managers
     description: >
       X: done 100, 2.0 issues per branch -> 0.85 * 1 + 0.15 * 0 = 0.85.
       Y: done 88, no issues -> 0.85 * 0.88 + 0.15 * 1 = 0.898, so Y is 1st.
       With the branches' 90/10 weights it would flip (X 0.90, Y 0.892).
+      Both grade Fair: the grade comes from the score, so X's 100% done rate
+      doesn't make it Excellent.
     model: manager_weekly_ranking
     given:
       - input: ref('branch_weekly_ranking')
@@ -202,8 +204,8 @@ unit_tests:
           - {week_start: 2025-12-31, week_end: 2026-01-06, manager: Y, done_rate: 88.0, number_of_issues: 0}
     expect:
       rows:
-        - {manager: Y, managers_rank: 1, score: "0.8980"}
-        - {manager: X, managers_rank: 2, score: "0.8500"}
+        - {manager: Y, managers_rank: 1, completion_grade: Fair, score: "0.8980"}
+        - {manager: X, managers_rank: 2, completion_grade: Fair, score: "0.8500"}
 
   # ── manager_monthly_ranking ─────────────────────────────────────────────
 
@@ -225,7 +227,72 @@ unit_tests:
           - {task_date: 2026-11-10, branch_code: B, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 3}
     expect:
       rows:
-        - {month: 2026-10-01, manager: X, branches: 1, done_rate: 100.0, issues_per_branch: 0.0, number_of_issues: 0, managers_rank: 1, score: "1.0000"}
-        - {month: 2026-10-01, manager: Y, branches: 1, done_rate: 80.0, issues_per_branch: 1.0, number_of_issues: 1, managers_rank: 2, score: "0.6800"}
-        - {month: 2026-11-01, manager: Y, branches: 1, done_rate: 90.0, issues_per_branch: 0.0, number_of_issues: 0, managers_rank: 1, score: "0.9150"}
-        - {month: 2026-11-01, manager: X, branches: 1, done_rate: 100.0, issues_per_branch: 3.0, number_of_issues: 3, managers_rank: 2, score: "0.8500"}
+        - {month: 2026-10-01, manager: X, branches: 1, done_rate: 100.0, issues_per_branch: 0.0, number_of_issues: 0, managers_rank: 1, completion_grade: Excellent, score: "1.0000"}
+        - {month: 2026-10-01, manager: Y, branches: 1, done_rate: 80.0, issues_per_branch: 1.0, number_of_issues: 1, managers_rank: 2, completion_grade: Terrible, score: "0.6800"}
+        - {month: 2026-11-01, manager: Y, branches: 1, done_rate: 90.0, issues_per_branch: 0.0, number_of_issues: 0, managers_rank: 1, completion_grade: Good, score: "0.9150"}
+        - {month: 2026-11-01, manager: X, branches: 1, done_rate: 100.0, issues_per_branch: 3.0, number_of_issues: 3, managers_rank: 2, completion_grade: Fair, score: "0.8500"}
+
+  # ── weekly_kpis ─────────────────────────────────────────────────────────
+
+  - name: weekly_kpis_add_up_the_counts_first
+    description: >
+      Week Wed Jan 7 - Tue Jan 13, two branches: 24 tasks due, 3 missed, so
+      100 - 3/24 * 100 = 100 - 12.5 = 87.5. Averaging the four daily rates
+      (90, 100, 0, 100) would give 72.5 instead. Wed Jan 14 starts the next week.
+    model: weekly_kpis
+    given:
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-01-07, branch_code: A, tasks_due: 10, tasks_missed: 1, tasks_submitted: 9, quality_issues: 2}
+          - {task_date: 2026-01-07, branch_code: B, tasks_due: 10, tasks_missed: 0, tasks_submitted: 10, quality_issues: 0}
+          - {task_date: 2026-01-13, branch_code: A, tasks_due: 2, tasks_missed: 2, tasks_submitted: 0, quality_issues: 1}
+          - {task_date: 2026-01-13, branch_code: B, tasks_due: 2, tasks_missed: 0, tasks_submitted: 2, quality_issues: 0}
+          - {task_date: 2026-01-14, branch_code: A, tasks_due: 5, tasks_missed: 0, tasks_submitted: 5, quality_issues: 0}
+    expect:
+      rows:
+        - {week_start: 2026-01-07, week_end: 2026-01-13, tasks_due: 24, tasks_missed: 3, tasks_submitted: 21, submission_rate: 87.5, quality_issues: 3}
+        - {week_start: 2026-01-14, week_end: 2026-01-20, tasks_due: 5, tasks_missed: 0, tasks_submitted: 5, submission_rate: 100.0, quality_issues: 0}
+
+  # ── branch_meal_weekly ──────────────────────────────────────────────────
+
+  - name: each_branch_meal_and_week
+    description: >
+      Week Wed Jan 7 - Tue Jan 13: Arabi Sop is due twice (two due times) and
+      French Fries once, for both branches. A misses one Arabi Sop; B gets an
+      issue on Arabi Sop and one on French Fries. Wed Jan 14 starts the next
+      week: one Arabi Sop, missed by A. Every branch gets a row for every meal
+      due that week, problems or not.
+    model: branch_meal_weekly
+    given:
+      - input: source('ops', 'scheduled_tasks')
+        rows:
+          - {task_id: 1, task_date: 2026-01-07, meal_id: 1}
+          - {task_id: 2, task_date: 2026-01-07, meal_id: 1}
+          - {task_id: 3, task_date: 2026-01-08, meal_id: 2}
+          - {task_id: 4, task_date: 2026-01-14, meal_id: 1}
+      - input: source('ops', 'task_misses')
+        rows:
+          - {task_id: 2, branch_code: A}
+          - {task_id: 4, branch_code: A}
+      - input: source('ops', 'quality_issues')
+        rows:
+          - {task_id: 1, branch_code: B}
+          - {task_id: 3, branch_code: B}
+      - input: source('ops', 'meals')
+        rows:
+          - {meal_id: 1, name: Arabi Sop}
+          - {meal_id: 2, name: French Fries}
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-01-07, branch_code: A, branch: Malaz}
+          - {task_date: 2026-01-07, branch_code: B, branch: Olaya}
+          - {task_date: 2026-01-14, branch_code: A, branch: Malaz}
+          - {task_date: 2026-01-14, branch_code: B, branch: Olaya}
+    expect:
+      rows:
+        - {week_end: 2026-01-13, branch: Malaz, meal: Arabi Sop, tasks_due: 2, tasks_missed: 1, quality_issues: 0}
+        - {week_end: 2026-01-13, branch: Malaz, meal: French Fries, tasks_due: 1, tasks_missed: 0, quality_issues: 0}
+        - {week_end: 2026-01-13, branch: Olaya, meal: Arabi Sop, tasks_due: 2, tasks_missed: 0, quality_issues: 1}
+        - {week_end: 2026-01-13, branch: Olaya, meal: French Fries, tasks_due: 1, tasks_missed: 0, quality_issues: 1}
+        - {week_end: 2026-01-20, branch: Malaz, meal: Arabi Sop, tasks_due: 1, tasks_missed: 1, quality_issues: 0}
+        - {week_end: 2026-01-20, branch: Olaya, meal: Arabi Sop, tasks_due: 1, tasks_missed: 0, quality_issues: 0}

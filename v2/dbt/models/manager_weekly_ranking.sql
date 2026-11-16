@@ -5,6 +5,7 @@
 --   issues per branch = average issues per branch
 --   score             = 0.85 * done rate share + 0.15 * (1 - issues per branch share)
 --                       (issues count a little more for managers, who fix them)
+--   grade             = from the score, with the branches' thresholds
 
 with managers as (
     select
@@ -36,5 +37,6 @@ select
     issues_per_branch,
     number_of_issues,
     rank() over (partition by week_end order by score desc) as managers_rank,
+    {{ grade('score') }} as completion_grade,      -- the branches' grades (macros/grade.sql), since step 9
     round(score, 4) as score    -- for reading; the rank and grade use the exact score
 from scored

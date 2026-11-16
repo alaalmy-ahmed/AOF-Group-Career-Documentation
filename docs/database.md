@@ -121,4 +121,4 @@ ORDER BY 1, 3 DESC;
 - A primary key on each table and a unique constraint on `(date, meal, branch_missed)`, so a duplicate load is rejected by the database itself, not only by the notebook's date check. *Done in v2: [step 1](../v2/README.md#step-1-the-schema).*
 - Indexes on `date` (and `branch`) for the quarterly and yearly reports as history grows.
 - Foreign keys from `issues.branch` and `tasks.branch_missed` to `branches`. *Done in v2: [step 1](../v2/README.md#step-1-the-schema).*
-- Point the Power BI weekly report at the ranking views. *v2 [step 7](../v2/README.md#step-7-dbt-models) builds the views; Power BI isn't switched over yet.*
+- Point the Power BI weekly report at the ranking views. *Done in v2, without Power BI: [step 7](../v2/README.md#step-7-dbt-models) builds the views, and [step 9](../v2/README.md#step-9-the-weekly-dashboard) replaces the weekly report with a web page that reads them.*
