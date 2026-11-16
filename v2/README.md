@@ -398,6 +398,8 @@ Why not have a script copy his rows into `07-2024.xlsx` instead: Python's Excel 
 
 The Power BI weekly report is replaced by a web page built for the area managers. The weekly run makes it by itself: `Weekly Report 2026-10-14 to 2026-10-20.html` in the output folder, next to the Excel ranking. Send it the way the PDF went. It's one file of about 30 KB that opens in any browser, offline, with nothing to install and no login.
 
+**See it:** [docs/sample-weekly-dashboard.html](../docs/sample-weekly-dashboard.html) is the dashboard built from the sample data, for the week of Oct 14–20. GitHub shows HTML files as code, so download it (*Download raw file*) and open it in a browser.
+
 It isn't a copy of the Power BI report. It's built around who and what, the same way for both KPIs:
 
 ```
