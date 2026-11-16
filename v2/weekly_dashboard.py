@@ -345,7 +345,7 @@ def render(week_end, week, built_on):
 <section class="tiles">{tiles}
 </section>
 {hierarchy}
-<footer>AOF Group · built {built_on} by Ahmed Khaled, Analytics Engineer</footer>
+<footer>AOF Group · built {built_on} by Ahmed Khaled, Data Analytics Engineer</footer>
 </main>
 </body>
 </html>
