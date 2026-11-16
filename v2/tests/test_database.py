@@ -226,6 +226,15 @@ def test_weekly_dashboard_matches_the_daily_files(built, tmp_path, monkeypatch):
     week = weekly_dashboard.read_week(date(2026, 10, 20))
     shown = {(m.branch_code, m.meal): (m.missed, m.issues) for m in week["meals"].itertuples()}
     assert shown == expected
+
+    # Under each meal: the issue descriptions with their counts, and the day and due time of each miss
+    shown = {(d.branch_code, d.meal, d.description): d.issues for d in week["descriptions"].itertuples()}
+    assert shown == Counter(zip(week_issues["Code"], week_issues["Meal"], week_issues["Description"]))
+    expected = sorted((code_of[name], meal, day, due)
+                      for day, meal, due, cell in zip(week_tasks["Date"], week_tasks["Meal"],
+                                                      week_tasks["Due time"], week_tasks["Branches Missed Tasks"])
+                      for name in split_names(cell))
+    assert sorted(week["missed"].itertuples(index=False, name=None)) == expected
     assert len(week["branches"]) == len(branch_list) and len(week["managers"]) == 10
 
     # "vs last week" uses each branch's and manager's real rank from the week before

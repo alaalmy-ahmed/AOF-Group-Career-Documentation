@@ -5,9 +5,12 @@ same dbt views, so its numbers match the Excel ranking.
 
 The page, top to bottom:
     the two KPIs for all branches, with the change since last week
-    the manager ranking and the branch ranking, each grade in its colour
-    By manager: manager -> their branches -> the meals where a branch
-                missed a task or had a quality issue (tap to open)
+    By manager, in rank order, each level inside the one above (tap to open):
+        manager -> their branches -> the meals where a branch missed a task
+        or had a quality issue -> the issue descriptions, and when each
+        missed task was due
+    Every manager and branch shows its grade in colour and the places it
+    moved since last week.
 
 It's plain HTML: no JavaScript, no pictures. So it opens anywhere, offline,
 including the iPhone's attachment preview, which doesn't run JavaScript.
@@ -36,7 +39,7 @@ from settings import DATABASE, OUTPUT_DIR, REPORT_DATE
 from weekly_ranking import week_end_for
 
 # Colours from the Power BI theme (Shawarma Classic Theme.json)
-NAVY = "#0F1934"        # headings and table headers
+NAVY = "#0F1934"        # headings
 ORANGE = "#E59925"      # accents
 GREEN = "#536F18"       # better than last week
 RED = "#F0512F"         # worse than last week
@@ -66,7 +69,7 @@ KPIS_SQL = """
 # Each row also gets last week's rank, to show who moved up or down
 MANAGERS_SQL = """
     SELECT m.managers_rank::int AS rank, m.manager, m.completion_grade AS grade, m.branches::int,
-           m.done_rate::float, m.issues_per_branch::float, m.number_of_issues::int AS issues,
+           m.done_rate::float, m.number_of_issues::int AS issues,
            last.managers_rank::int AS last_rank
       FROM reporting.manager_weekly_ranking AS m
       LEFT JOIN reporting.manager_weekly_ranking AS last
@@ -94,12 +97,27 @@ MEALS_SQL = """
      ORDER BY branch_code, quality_issues DESC, tasks_missed DESC, meal
 """
 
+DESCRIPTIONS_SQL = """
+    SELECT branch_code, meal, description, issues::int
+      FROM reporting.issue_descriptions_weekly
+     WHERE week_end = %(week_end)s
+     ORDER BY branch_code, meal, issues DESC, description
+"""
+
+MISSED_SQL = """
+    SELECT branch_code, meal, task_date, due_time
+      FROM reporting.missed_tasks
+     WHERE week_end = %(week_end)s
+     ORDER BY branch_code, meal, task_date, due_time
+"""
+
 
 def read_week(week_end):
     """Everything the dashboard shows for the week ending on `week_end`, as
-    tables: kpis, managers, branches, meals."""
+    tables: kpis, managers, branches, meals, descriptions, missed."""
     dates = {"week_end": week_end, "last_week": week_end - timedelta(days=7)}
-    queries = {"kpis": KPIS_SQL, "managers": MANAGERS_SQL, "branches": BRANCHES_SQL, "meals": MEALS_SQL}
+    queries = {"kpis": KPIS_SQL, "managers": MANAGERS_SQL, "branches": BRANCHES_SQL, "meals": MEALS_SQL,
+               "descriptions": DESCRIPTIONS_SQL, "missed": MISSED_SQL}
     conn = psycopg2.connect(dbname=DATABASE)
     try:
         with conn, conn.cursor() as cur:
@@ -147,14 +165,25 @@ def plural(number, one, many):
     return f"{number:g} {one if number == 1 else many}"
 
 
-def meal_line(meal, missed, issues):
-    """'Arabi Sop: 2 issues · 1 missed' (only the parts that aren't zero)."""
+def when(day, due_time):
+    """'Thu 15, 4-8 pm': the day and due time of a missed task."""
+    return f"{day:%a} {day.day}, {due_time}"
+
+
+def meal_line(meal, issues, missed, missed_when):
+    """'Arabi Sop: 2 issues · 1 missed (Thu 15, 4-8 pm)': only the parts
+    that aren't zero, with when each missed task was due."""
     parts = []
     if issues:
         parts.append(plural(issues, "issue", "issues"))
     if missed:
-        parts.append(f"{missed} missed")
+        parts.append(f"{missed} missed ({'; '.join(missed_when)})")
     return f"{meal}: {' · '.join(parts)}"
+
+
+def description_line(description, count):
+    """'Wrong sauce quantity ×2', or just the description when it came up once."""
+    return f"{description} ×{count}" if count > 1 else description
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -182,39 +211,48 @@ def tile(label, value, change):
     </div>"""
 
 
-def ranking_table(what, rows):
-    """A ranking that fits a phone: three columns (rank, name, change), with
-    the grade and the numbers on a second line under the name. Each row is
-    (rank, name, grade, details, change)."""
-    body = ""
-    for rank, name, grade, details, change in rows:
-        body += (f'<tr><td class="number">{rank}</td>'
-                 f'<td><strong>{escape(name)}</strong>'
-                 f'<span class="sub">{badge(grade)} {escape(details)}</span></td>'
-                 f'<td class="number">{coloured(change)}</td></tr>\n')
-    return (f'<table><thead><tr><th class="number">#</th><th>{what}</th>'
-            f'<th class="number">vs last week</th></tr></thead><tbody>\n{body}</tbody></table>')
+def meals_of(branch_code, week):
+    """The list under an opened branch: each meal with a problem, and under
+    it the issue descriptions."""
+    meals = week["meals"][week["meals"]["branch_code"] == branch_code]
+    if meals.empty:
+        return '<p class="sub">No missed tasks or issues.</p>'
+    descriptions, missed = week["descriptions"], week["missed"]
+    html = "<ul>"
+    for meal in meals.itertuples():
+        times = missed[(missed["branch_code"] == branch_code) & (missed["meal"] == meal.meal)]
+        found = descriptions[(descriptions["branch_code"] == branch_code) & (descriptions["meal"] == meal.meal)]
+        line = meal_line(meal.meal, meal.issues, meal.missed,
+                         [when(t.task_date, t.due_time) for t in times.itertuples()])
+        html += f"<li>{escape(line)}"
+        if not found.empty:
+            html += "<ul>" + "".join(f"<li>{escape(description_line(d.description, d.issues))}</li>"
+                                     for d in found.itertuples()) + "</ul>"
+        html += "</li>"
+    return html + "</ul>"
 
 
-def by_manager(managers, branches, meals):
-    """Manager -> their branches -> the branch's meals with a problem, each
-    level inside the one above it (<details>: tap to open)."""
+def by_manager(week):
+    """Manager -> their branches -> meals -> descriptions, each level inside
+    the one above it (<details>: tap to open). Managers and branches are in
+    rank order.
+
+    Each name is inside <bdi>, so the Arabic half of a branch name stays in
+    its place. Without it, the browser pulls the grade and the ▲ number that
+    follow into the right-to-left text: "Al Malaz - 21 ▲ Excellent الملز"."""
+    branches = week["branches"]
     html = ""
-    for m in managers.itertuples():
+    for m in week["managers"].itertuples():
         branch_html = ""
         for b in branches[branches["manager"] == m.manager].itertuples():
-            problems = meals[meals["branch_code"] == b.branch_code]
-            if problems.empty:
-                inside = '<p class="sub">No missed tasks or issues.</p>'
-            else:
-                inside = "<ul>" + "".join(f"<li>{escape(meal_line(p.meal, p.missed, p.issues))}</li>"
-                                          for p in problems.itertuples()) + "</ul>"
             branch_html += (
-                f'<details class="branch"><summary>#{b.rank} <strong>{escape(b.branch)}</strong> {badge(b.grade)}'
+                f'<details class="branch"><summary>#{b.rank} <strong><bdi>{escape(b.branch)}</bdi></strong> '
+                f'{badge(b.grade)} {coloured(rank_change(b.rank, b.last_rank))}'
                 f'<span class="sub">{b.done_rate:g}% submitted · {plural(b.issues, "issue", "issues")}</span>'
-                f"</summary>{inside}</details>\n")
+                f"</summary>{meals_of(b.branch_code, week)}</details>\n")
         html += (
-            f'<details class="manager"><summary>{m.rank} <strong>{escape(m.manager)}</strong> {badge(m.grade)}'
+            f'<details class="manager"><summary>{m.rank} <strong><bdi>{escape(m.manager)}</bdi></strong> '
+            f'{badge(m.grade)} {coloured(rank_change(m.rank, m.last_rank))}'
             f'<span class="sub">{plural(m.branches, "branch", "branches")} · {m.done_rate:g}% submitted · '
             f'{plural(m.issues, "issue", "issues")}</span></summary>\n{branch_html}</details>\n')
     return html
@@ -252,17 +290,13 @@ STYLE = f"""
   .grade {{ display: inline-block; padding: 0 8px; border-radius: 10px; font-size: 12px; font-weight: 600;
             line-height: 20px; white-space: nowrap; }}
 {GRADE_STYLE}
-  table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
-  th {{ background: {NAVY}; color: #FFFFFF; font-weight: 600; text-align: left; padding: 6px 8px; }}
-  td {{ padding: 8px; border-bottom: 1px solid {LINE}; vertical-align: top; }}
-  .number {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
-  th.number {{ white-space: normal; }}    /* "vs last week" wraps, leaving the names more room */
   .sub {{ display: block; color: {MUTED}; font-size: 12px; margin-top: 2px; }}
   details {{ border-bottom: 1px solid {LINE}; }}
   summary {{ padding: 10px 0; cursor: pointer; }}
   details.branch {{ margin-left: 20px; }}
   details.branch:last-child {{ border-bottom: none; }}
   details ul {{ margin: 0 0 10px 20px; padding-left: 20px; }}
+  details ul ul {{ margin: 2px 0 6px; padding-left: 18px; color: {MUTED}; font-size: 14px; }}
   details.branch > p.sub {{ margin: 0 0 10px 20px; }}
   footer {{ color: {MUTED}; font-size: 12px; margin-top: 16px; }}
 """
@@ -286,35 +320,13 @@ def render(week_end, week, built_on):
                           None if last_week is None else last_week["quality_issues"], lower_is_better=True))
     )
 
-    # 2. The two rankings
-    managers, branches = week["managers"], week["branches"]
-    manager_rows = [
-        (m.rank, m.manager, m.grade,
-         f"{plural(m.branches, 'branch', 'branches')} · {m.done_rate:g}% submitted · "
-         f"{plural(m.issues, 'issue', 'issues')} ({m.issues_per_branch:g} per branch)",
-         rank_change(m.rank, m.last_rank))
-        for m in managers.itertuples()
-    ]
-    branch_rows = [
-        (b.rank, b.branch, b.grade,
-         f"{b.manager} · {b.done_rate:g}% submitted · {plural(b.issues, 'issue', 'issues')}",
-         rank_change(b.rank, b.last_rank))
-        for b in branches.itertuples()
-    ]
+    # 2. Manager -> branches -> meals -> descriptions
     grades = " ".join(badge(grade) for grade in GRADE_COLOURS)
-    rankings = (
-        section("Manager ranking", f"Rank 1 is the best. Grades, best to worst: {grades}",
-                ranking_table("Manager", manager_rows))
-        + section("Branch ranking", "▲ / ▼: places moved since last week.",
-                  ranking_table("Branch", branch_rows))
-    )
-
-    # 3. Manager -> branches -> meals
     hierarchy = section(
         "By manager",
-        "Tap a manager to see their branches, and a branch to see the meals where it missed a task "
-        "or had a quality issue. # is the branch's rank among all branches.",
-        by_manager(managers, branches, week["meals"]))
+        "1 is the best. Tap a manager, then a branch, to open it. ▲ ▼: places moved since last week. "
+        f"#: the branch's rank among all branches.<br>Grades, best to worst: {grades}",
+        by_manager(week))
 
     return f"""<!doctype html>
 <html lang="en">
@@ -332,9 +344,8 @@ def render(week_end, week, built_on):
 <main>
 <section class="tiles">{tiles}
 </section>
-{rankings}
 {hierarchy}
-<footer>Shawarma Classic · built {built_on} from the reporting views (dbt). Same numbers as the weekly Excel ranking.</footer>
+<footer>AOF Group · built {built_on} by Ahmed Khaled, Analytics Engineer</footer>
 </main>
 </body>
 </html>

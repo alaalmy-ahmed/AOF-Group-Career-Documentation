@@ -8,11 +8,11 @@ The original system (v1) is at the top of this repository, unchanged; git tag `v
 | 2. Safe re-runnable loads | Done | [load_workbook.py](load_workbook.py) loads the workbook into the schema; a re-run adds nothing twice |
 | 3. Validation before loading | Done | [validate_workbook.py](validate_workbook.py) checks the workbook and lists every problem; the load runs it first |
 | 4. Notebooks → Python modules | Done | The daily distribution and the weekly ranking are scripts; all settings are in [settings.py](settings.py) |
-| 5. Tests | Done | 92 pytest tests in [tests/](tests): checks, intake folder, daily files, load, dbt build, schedule, dashboard |
+| 5. Tests | Done | 94 pytest tests in [tests/](tests): checks, intake folder, daily files, load, dbt build, schedule, dashboard |
 | 6. Scheduling and alerts | Done | Airflow runs the scripts on a schedule and emails the result of each step: [dags/pipeline_dags.py](dags/pipeline_dags.py) |
 | 7. dbt models | Done | Reporting views built and tested by dbt: daily branch KPIs, weekly and monthly rankings, in [dbt/](dbt) |
 | 8. Replacing the Excel intake | Done | The entry person's daily files go into an intake folder and are read from there; only the last 10 days are kept |
-| 9. Weekly dashboard | Done | A web page for the area managers instead of the Power BI weekly report: rankings with coloured grades, then manager → branches → meals: [weekly_dashboard.py](weekly_dashboard.py) |
+| 9. Weekly dashboard | Done | A web page for the area managers instead of the Power BI weekly report: manager → branches → meals → issue descriptions, with grades in colour: [weekly_dashboard.py](weekly_dashboard.py) |
 | 10. Monthly, quarterly and yearly dashboards | Planned | The other three Power BI reports, for management on computers, with interactive charts |
 
 ## Running v2
@@ -164,7 +164,7 @@ Each file imports what it needs from the others (for example, `from settings imp
 pytest v2                                                     # no database needed
 createdb shawarma_classic_test                                # once
 TEST_PGDATABASE=shawarma_classic_test pytest v2               # adds the database tests
-TEST_PGDATABASE=shawarma_classic_test DBT_EXECUTABLE=~/dbt-venv/bin/dbt pytest v2   # all 92, dbt too (step 7)
+TEST_PGDATABASE=shawarma_classic_test DBT_EXECUTABLE=~/dbt-venv/bin/dbt pytest v2   # all 94, dbt too (step 7)
 ```
 
 A test runs a piece of the pipeline on input where the right answer is known, and fails if the answer changes. Run them after every change: if something breaks, a test names it before it reaches the reports.
@@ -173,7 +173,7 @@ A test runs a piece of the pipeline on input where the right answer is known, an
 |---|---|---|
 | [test_validate_workbook.py](tests/test_validate_workbook.py) | Every check: a clean workbook passes, each mistake gives its exact message and Excel row, later stages wait for earlier ones, the daily check ignores tasks and other days | A tiny workbook (3 branches, 2 tasks, 1 issue), with one thing broken per test |
 | [test_weekly_ranking.py](tests/test_weekly_ranking.py) | Which week the Excel ranking is for. (The ranking math was tested here until step 7 moved it into dbt; its tests are now dbt unit tests.) | Dates |
-| [test_weekly_dashboard.py](tests/test_weekly_dashboard.py) | The weekly dashboard (step 9): the wording, no JavaScript on the page, the grade colours, names escaped, each manager's branches and each branch's meals, the first week | A tiny made-up week (2 managers, 3 branches) |
+| [test_weekly_dashboard.py](tests/test_weekly_dashboard.py) | The weekly dashboard (step 9): the wording, no JavaScript on the page, the grade colours, names escaped, Arabic names kept in place, each manager's branches, each branch's meals with their descriptions and missed times, the first week | A tiny made-up week (2 managers, 3 branches) |
 | [test_intake.py](tests/test_intake.py) | The intake folder (step 8): any file name, lock and hidden files skipped, problems named with their file, the same day in two files, deleting only files older than `KEEP_DAYS` days | The tiny workbook, saved as daily files |
 | [test_distribute_issues.py](tests/test_distribute_issues.py) | One file per branch in its manager's folder, the right rows, each photo on its own row and the same picture as in the day's file; a mistake writes nothing; a missing day's file stops the run | The sample's daily files (the only ones with in-cell photos) |
 | [test_database.py](tests/test_database.py) | A second load adds nothing, a failed load saves nothing, a corrected manager is updated, old files are deleted only after a successful load, dbt builds with every check passing, the daily KPIs, the weekly Excel files and the weekly dashboard add up to the daily files | A copy of the sample's daily files, in a test database |
@@ -279,6 +279,8 @@ No files were written.
 | [manager_monthly_ranking](dbt/models/manager_monthly_ranking.sql) | Manager per month | The same method over a month, with the manager who ran each branch that month |
 | [weekly_kpis](dbt/models/weekly_kpis.sql) | Week | The two KPIs for all branches together: the weekly dashboard's headline numbers (added in step 9) |
 | [branch_meal_weekly](dbt/models/branch_meal_weekly.sql) | Branch, meal and week | Tasks due, missed, and quality issues: the meals under each branch on the weekly dashboard (added in step 9) |
+| [issue_descriptions_weekly](dbt/models/issue_descriptions_weekly.sql) | Branch, meal, description and week | How many times each issue description came up (added in step 9) |
+| [missed_tasks](dbt/models/missed_tasks.sql) | Missed task | Which branch missed which meal, with its day, due time and week (added in step 9) |
 
 The method is the one in [metrics.md](../docs/metrics.md). `weekly_ranking.py` now only picks one week from the two weekly views and writes the Excel files; it no longer does any maths.
 
@@ -300,8 +302,8 @@ The method is the one in [metrics.md](../docs/metrics.md). `weekly_ranking.py` n
 
 `dbt build` builds each view and checks it before anything that depends on it. If a check fails, the views after it aren't built, the weekly run's email says which check failed, and the ranking and dashboard steps are skipped.
 
-- **12 unit tests:** a few made-up rows in, the exact rows expected out, worked out on paper in each test's description. They cover the tiny week from step 5, ties, a week with no issues, a score of exactly 0.95, each week ranked on its own, the Wednesday–Tuesday weeks, a week that spans a rotation, the managers' 85/15 weights, and the monthly ranking following the rotation. Step 9 added two (the week's KPIs from counts, and each branch's meals) and checks the managers' grades.
-- **22 data checks on the real data:** one row per branch per day (and per week and month), no missing managers or ranks, only the five grades, every branch code known, and submissions that add up to the workbook's own *Done Tasks* on every day. Step 9 added seven, for its two views, the managers' grades and the totals.
+- **14 unit tests:** a few made-up rows in, the exact rows expected out, worked out on paper in each test's description. They cover the tiny week from step 5, ties, a week with no issues, a score of exactly 0.95, each week ranked on its own, the Wednesday–Tuesday weeks, a week that spans a rotation, the managers' 85/15 weights, and the monthly ranking following the rotation. Step 9 added four (the week's KPIs from counts, each branch's meals, the issue descriptions, the missed tasks) and checks the managers' grades.
+- **27 data checks on the real data:** one row per branch per day (and per week and month), no missing managers or ranks, only the five grades, every branch code known, and submissions that add up to the workbook's own *Done Tasks* on every day. Step 9 added twelve, for its four views, the managers' grades and the totals.
 
 ### Who managed a branch, month by month
 
@@ -396,22 +398,32 @@ Why not have a script copy his rows into `07-2024.xlsx` instead: Python's Excel 
 
 ## Step 9: the weekly dashboard
 
-The Power BI weekly report is replaced by a web page built for the area managers. The weekly run makes it by itself: `Weekly Report 2026-10-14 to 2026-10-20.html` in the output folder, next to the Excel ranking. Send it the way the PDF went. It's one file of about 30 KB that opens in any browser, offline, with nothing to install and no login.
+The Power BI weekly report is replaced by a web page built for the area managers. The weekly run makes it by itself: `Weekly Report 2026-10-14 to 2026-10-20.html` in the output folder, next to the Excel ranking. Send it the way the PDF went. It's one file of about 20 KB that opens in any browser, offline, with nothing to install and no login.
 
 **See it:** [docs/sample-weekly-dashboard.html](../docs/sample-weekly-dashboard.html) is the dashboard built from the sample data, for the week of Oct 14–20. GitHub shows HTML files as code, so download it (*Download raw file*) and open it in a browser.
 
 It isn't a copy of the Power BI report. It's built around who and what, the same way for both KPIs:
 
 ```
-manager  →  their branches  →  the meals where a branch missed a task or had a quality issue
+manager  →  their branches  →  the meals with a problem  →  the issue descriptions, and when each missed task was due
 ```
 
-| Part of the page | Shows | Read from (dbt view) |
+The page has two parts:
+
+| Part | Shows | Read from (dbt view) |
 |---|---|---|
 | Two headline numbers | The week's submission rate and quality issues for all branches, with the change since the week before | `weekly_kpis` (new) |
-| Manager ranking | Rank, grade, branches, % submitted, issues, and places moved since last week | `manager_weekly_ranking` |
-| Branch ranking | Rank, grade, manager, % submitted, issues, and places moved | `branch_weekly_ranking` |
-| By manager | Tap a manager to see their branches, then tap a branch to see its problem meals ("Arabi Sop: 2 issues · 1 missed") | `branch_meal_weekly` (new) |
+| By manager | The managers in rank order, each with grade, % submitted, issues and places moved since last week. Tap a manager to see their branches, shown the same way. Tap a branch to see its problem meals ("Arabi Sop: 2 issues · 1 missed (Thu 15, 4-8 pm)") and, under each meal, its issue descriptions ("Wrong sauce quantity ×2") | `manager_weekly_ranking`, `branch_weekly_ranking`, and the new `branch_meal_weekly`, `issue_descriptions_weekly`, `missed_tasks` |
+
+An opened branch looks like this:
+
+```
+▾ #11 Al Olaya - العليا  [Excellent]  ▼ 10
+      97.6% submitted · 1 issue
+      • Heating Shawarma: 1 issue
+          ◦ Station not cleaned between orders
+      • Arabi Sop: 1 missed (Fri 16, 12-4 pm)
+```
 
 ### Colours that say good or bad
 
@@ -431,15 +443,19 @@ Each grade has its own colour, from best to worst. The word is always written to
 
 - **Area managers read it on their phones, from an attachment.** On an iPhone, tapping an attachment in WhatsApp or Mail opens a preview that doesn't run JavaScript, and Safari won't open a file saved on the phone. So the page is plain HTML: no JavaScript and no pictures.
 - **"Tap to open" is HTML's own `<details>` element.** It needs no JavaScript, but whether the iPhone preview lets you tap it is untested (see Known limits).
-- **No charts.** The first version had three (tasks by day, issues by meal, issues by branch). They repeated what the rankings and *By manager* show, so they were removed. With them went matplotlib.
-- **Made for a phone:** one column, two headline numbers side by side, and rankings with three columns (rank, name, change). The grade and numbers sit on a second line under the name.
+- **Everything that wasn't needed was taken out.** The first version had three charts (tasks by day, issues by meal, issues by branch) and two ranking tables. *By manager* shows the same rankings, grades and changes, so they were removed, and matplotlib with them.
+- **Arabic names stay in one piece.** Each name is inside `<bdi>`. Without it, the browser pulled the grade and the ▲ number that follow a name into its Arabic half, and showed "Al Malaz - 21 ▲ Excellent الملز".
 
 ### Keeping the numbers right
 
 - **The dashboard only reads the dbt views and picks rows. The formulas live in dbt, once.** So it shows the same numbers as the Excel ranking.
-- **Two new views.** `weekly_kpis` holds the week's two KPIs for all branches; the counts are added up first, then divided. `branch_meal_weekly` has one row per branch, meal and week: tasks due, missed, and issues.
+- **Four new views.**
+  - `weekly_kpis`: the week's two KPIs for all branches. The counts are added up first, then divided.
+  - `branch_meal_weekly`: one row per branch, meal and week, with tasks due, missed, and issues.
+  - `issue_descriptions_weekly`: how many times each description came up, for each branch's meal and week.
+  - `missed_tasks`: one row per missed task, with its day and due time.
 - **Two new macros.** `week_end` holds the Wednesday–Tuesday rule, and `grade` holds the five grades. Each is written once, and used by every view that needs it.
-- **A new dbt check, `weekly_counts_agree`:** every week, the issues add up to the same total in the headline, the branch ranking and the meals, and the missed tasks in the headline and the meals.
+- **A new dbt check, `weekly_counts_agree`:** every week, the issues must add up to the same total in the headline, the branches, the meals and the descriptions. The missed tasks must agree in the headline, the meals and the list of misses.
 
 ### Running it
 
@@ -452,17 +468,27 @@ In Airflow it's a fourth step in the Wednesday run. It starts once dbt has built
 
 ### Tested
 
-- **In a browser at phone size (375 px wide) and computer size:** no sideways scrolling, no JavaScript on the page, and tapping opens a manager, then a branch.
+- **In a browser at phone size (375 px wide) and computer size:** no sideways scrolling, no JavaScript on the page, and tapping opens a manager, then a branch. That's how the Arabic-name problem above was found.
 - **In Airflow:** the weekly run on the sample did the load, then dbt, then the Excel ranking and the dashboard. (This was with the first version of the page. The task itself hasn't changed.)
 - **Tests:**
-  - [test_weekly_dashboard.py](tests/test_weekly_dashboard.py) is new: 20 tests, no database needed. They check the wording, the five grade colours, names escaped, each manager holding exactly their branches in rank order, each branch listing only its own problem meals, and the first week.
-  - `test_database.py` builds the sample's dashboard and checks it against the daily files: the submission rate, the issues and their change since last week, every branch's missed tasks and issues meal by meal, and last week's rank for every branch and manager.
-  - dbt: unit tests for the two new views and for the managers' grades, and new checks on the new views and the totals.
-- **Planted bugs:** 17 bugs, one at a time. For example: Excellent coloured red, a branch shown under the wrong manager, another branch's meals shown, a single missed task not shown, meals with no problem listed, more issues shown as good news, last week's rank taken from this week, a miss counted on every meal, and managers graded on their done rate instead of their score. Each one made a test fail.
-  - One got past the first version of the tests: managers graded on their done rate. In that unit test, a 95% done rate and a 0.95 score both mean Good, so nothing changed. A second unit test now checks a manager with a 100% done rate who scores 0.85, and is Fair.
+  - [test_weekly_dashboard.py](tests/test_weekly_dashboard.py) is new: 22 tests, no database needed. They check the wording, the five grade colours, names escaped and Arabic names kept in place, each manager holding exactly their branches in rank order, and each branch listing only its own meals. Each meal must carry its own descriptions and missed times. The first week is checked too.
+  - `test_database.py` builds the sample's dashboard and checks it against the daily files:
+    - the submission rate, the issues and their change since last week;
+    - every branch's missed tasks and issues, meal by meal;
+    - every description and its count;
+    - the day and due time of every missed task;
+    - last week's rank for every branch and manager.
+  - dbt: unit tests for the four new views and for the managers' grades, and new checks on the new views and the totals.
+- **Planted bugs:** 22 bugs, one at a time. For example:
+  - on the page: Excellent coloured red, a branch shown under the wrong manager, descriptions or missed times shown under the wrong meal, "×1" written on a single description, Arabic names not kept in one piece, more issues shown as good news;
+  - in dbt: last week's rank taken from this week, each description counted once, missed tasks not put in their week, a miss counted on every meal, managers graded on their done rate instead of their score.
+
+  Each one made a test fail. Two got past the first version of the tests:
+  - **Managers graded on their done rate.** In that unit test, a 95% done rate and a 0.95 score both mean Good. A second unit test now checks a manager with a 100% done rate who scores 0.85, and is Fair.
+  - **Missed times shown under every meal.** The made-up week had a missed task on only one meal. It now has one on two meals.
 
 **Known limits:**
-- **Not tested on a real iPhone.** That the preview doesn't run JavaScript is what people consistently report. There's no Xcode on this Mac, so there's no iPhone simulator to try it. Whether the preview lets you tap to open is also untested. Check both once: send yourself the sample dashboard on WhatsApp and open it on an iPhone and on an Android phone. If tapping doesn't work there, the fix is one word: `<details open>` shows everything open.
+- **Not tested on a real iPhone.** That the preview doesn't run JavaScript is what people consistently report. There's no Xcode on this Mac, so there's no iPhone simulator to try it. Whether the preview lets you tap to open is also untested. If tapping doesn't work there, managers see only the manager lines. The fix is one word: `<details open>` shows everything open. Check it once: send yourself the sample dashboard on WhatsApp and open it on an iPhone and on an Android phone.
 - **"vs last week" needs last week in the database.** Like the PDF, the page is a snapshot of one week, so the first week after going live says "no data for last week".
 - **The sample's last week is partial.** The week before Oct 14–20 only has Oct 13, so issues seem to jump from 8 to 45. Real weeks are full.
 - **The Excel managers summary has no grade column.** It keeps the columns it has always had.

@@ -109,6 +109,34 @@ models:
       - name: tasks_missed
       - name: quality_issues
 
+  - name: issue_descriptions_weekly
+    description: >
+      How many times each quality issue description came up for a branch's
+      meal, week by week. The weekly dashboard lists them under the meal.
+    data_tests:
+      # One row per branch, meal, description and week
+      - unique:
+          column_name: "week_end || ' ' || branch_code || ' ' || meal || ' ' || description"
+    columns:
+      - name: description
+        description: From the Fixed Choices list
+        data_tests: [not_null]
+      - name: issues
+
+  - name: missed_tasks
+    description: >
+      One row per missed task, with its day, due time, meal and week. The
+      weekly dashboard shows the day and due time of each miss.
+    data_tests:
+      # One row per branch per task, like ops.task_misses
+      - unique:
+          column_name: "task_id || ' ' || branch_code"
+    columns:
+      - name: week_end
+        data_tests: [not_null]
+      - name: due_time
+        data_tests: [not_null]
+
   - name: manager_monthly_ranking
     description: >
       The monthly manager ranking: each branch counts for the manager who ran

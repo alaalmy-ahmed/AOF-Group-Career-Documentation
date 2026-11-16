@@ -296,3 +296,61 @@ unit_tests:
         - {week_end: 2026-01-13, branch: Olaya, meal: French Fries, tasks_due: 1, tasks_missed: 0, quality_issues: 1}
         - {week_end: 2026-01-20, branch: Malaz, meal: Arabi Sop, tasks_due: 1, tasks_missed: 1, quality_issues: 0}
         - {week_end: 2026-01-20, branch: Olaya, meal: Arabi Sop, tasks_due: 1, tasks_missed: 0, quality_issues: 0}
+
+  # ── issue_descriptions_weekly ───────────────────────────────────────────
+
+  - name: descriptions_counted_per_branch_meal_and_week
+    description: >
+      Branch A's Arabi Sop gets "Wrong sauce quantity" twice in the week
+      ending Tue Jan 13 (on two different tasks) and "Bread not heated" once.
+      The same description on Wed Jan 14 belongs to the next week.
+    model: issue_descriptions_weekly
+    given:
+      - input: source('ops', 'quality_issues')
+        rows:
+          - {issue_id: 1, task_id: 1, branch_code: A, description: Wrong sauce quantity}
+          - {issue_id: 2, task_id: 2, branch_code: A, description: Wrong sauce quantity}
+          - {issue_id: 3, task_id: 2, branch_code: A, description: Bread not heated}
+          - {issue_id: 4, task_id: 3, branch_code: A, description: Wrong sauce quantity}
+      - input: source('ops', 'scheduled_tasks')
+        rows:
+          - {task_id: 1, task_date: 2026-01-07, meal_id: 1}
+          - {task_id: 2, task_date: 2026-01-08, meal_id: 1}
+          - {task_id: 3, task_date: 2026-01-14, meal_id: 1}
+      - input: source('ops', 'meals')
+        rows:
+          - {meal_id: 1, name: Arabi Sop}
+    expect:
+      rows:
+        - {week_end: 2026-01-13, branch_code: A, meal: Arabi Sop, description: Wrong sauce quantity, issues: 2}
+        - {week_end: 2026-01-13, branch_code: A, meal: Arabi Sop, description: Bread not heated, issues: 1}
+        - {week_end: 2026-01-20, branch_code: A, meal: Arabi Sop, description: Wrong sauce quantity, issues: 1}
+
+  # ── missed_tasks ────────────────────────────────────────────────────────
+
+  - name: each_miss_with_its_day_due_time_and_week
+    description: >
+      A misses Arabi Sop on Wed Jan 7 (12-4 pm) and French Fries on Tue Jan 13
+      (4-8 pm): both in the week ending Jan 13. B misses Arabi Sop on Wed
+      Jan 14, which starts the next week.
+    model: missed_tasks
+    given:
+      - input: source('ops', 'task_misses')
+        rows:
+          - {task_id: 1, branch_code: A}
+          - {task_id: 2, branch_code: A}
+          - {task_id: 3, branch_code: B}
+      - input: source('ops', 'scheduled_tasks')
+        rows:
+          - {task_id: 1, task_date: 2026-01-07, meal_id: 1, due_time: "12-4 pm"}
+          - {task_id: 2, task_date: 2026-01-13, meal_id: 2, due_time: "4-8 pm"}
+          - {task_id: 3, task_date: 2026-01-14, meal_id: 1, due_time: "12-4 pm"}
+      - input: source('ops', 'meals')
+        rows:
+          - {meal_id: 1, name: Arabi Sop}
+          - {meal_id: 2, name: French Fries}
+    expect:
+      rows:
+        - {branch_code: A, task_date: 2026-01-07, week_end: 2026-01-13, meal: Arabi Sop, due_time: "12-4 pm"}
+        - {branch_code: A, task_date: 2026-01-13, week_end: 2026-01-13, meal: French Fries, due_time: "4-8 pm"}
+        - {branch_code: B, task_date: 2026-01-14, week_end: 2026-01-20, meal: Arabi Sop, due_time: "12-4 pm"}
