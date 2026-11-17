@@ -152,7 +152,7 @@ def rank_change(rank, last_rank):
     """How many places a branch or manager moved since last week. Rank 1 is
     the best, so going from 5th to 2nd is up 3: ("▲ 3", "good")."""
     if pd.isna(last_rank):
-        return "new", "same"            # not in last week's ranking
+        return "", "same"               # no rank last week: nothing to compare with, so no mark
     moved = int(last_rank) - int(rank)
     if moved > 0:
         return f"▲ {moved}", "good"
@@ -192,9 +192,9 @@ def description_line(description, count):
 # The page's pieces. Names go through escape(), so a name with & or < shows as written.
 
 def coloured(change):
-    """("▲ 3", "good") -> the text in green (see STYLE)."""
+    """("▲ 3", "good") -> the text in green (see STYLE). No text, nothing shown."""
     text, mood = change
-    return f'<span class="{mood}">{text}</span>'
+    return f'<span class="{mood}">{text}</span>' if text else ""
 
 
 def badge(grade):
@@ -214,29 +214,31 @@ def tile(label, value, change):
 
 
 def meals_of(branch_code, week):
-    """The list under an opened branch: each meal with a problem, and under
-    it the issue descriptions."""
+    """What an opened branch shows: each meal with a problem, as its own
+    tap-to-open line with the issue descriptions inside. A meal with only
+    missed tasks has nothing to open, so it's a plain line."""
     meals = week["meals"][week["meals"]["branch_code"] == branch_code]
     if meals.empty:
         return '<p class="sub">No missed tasks or issues.</p>'
     descriptions, missed = week["descriptions"], week["missed"]
-    html = "<ul>"
+    html = ""
     for meal in meals.itertuples():
         times = missed[(missed["branch_code"] == branch_code) & (missed["meal"] == meal.meal)]
         found = descriptions[(descriptions["branch_code"] == branch_code) & (descriptions["meal"] == meal.meal)]
-        line = meal_line(meal.meal, meal.issues, meal.missed,
-                         [when(t.task_date, t.due_time) for t in times.itertuples()])
-        html += f"<li>{escape(line)}"
-        if not found.empty:
-            html += "<ul>" + "".join(f"<li>{escape(description_line(d.description, d.issues))}</li>"
-                                     for d in found.itertuples()) + "</ul>"
-        html += "</li>"
-    return html + "</ul>"
+        line = escape(meal_line(meal.meal, meal.issues, meal.missed,
+                                [when(t.task_date, t.due_time) for t in times.itertuples()]))
+        if found.empty:
+            html += f'<p class="meal">{line}</p>'
+        else:
+            issues = "".join(f"<li>{escape(description_line(d.description, d.issues))}</li>"
+                             for d in found.itertuples())
+            html += f'<details class="meal"><summary>{line}</summary><ul>{issues}</ul></details>'
+    return html
 
 
 def by_manager(week):
     """Manager -> their branches -> meals -> descriptions, each level inside
-    the one above it (<details>: tap to open). Managers and branches are in
+    the one above it (<details>: tap to open; meals_of opens the meals). Managers and branches are in
     rank order.
 
     Each name is inside <bdi>, so the Arabic half of a branch name stays in
@@ -301,8 +303,11 @@ STYLE = f"""
   summary {{ padding: 10px 0; cursor: pointer; }}
   details.branch {{ margin-left: 20px; }}
   details.branch:last-child {{ border-bottom: none; }}
-  details ul {{ margin: 0 0 10px 20px; padding-left: 20px; }}
-  details ul ul {{ margin: 2px 0 6px; padding-left: 18px; color: {MUTED}; font-size: 14px; }}
+  details.meal {{ margin-left: 20px; border-bottom: none; }}
+  details.meal > summary {{ padding: 6px 0; }}
+  p.meal {{ margin: 0 0 0 20px; padding: 6px 0 6px 16px; }}          /* lined up with the meals that open */
+  details.meal ul {{ margin: 0 0 8px 16px; padding-left: 20px; color: {MUTED}; font-size: 14px; }}
+  details.branch > :last-child {{ margin-bottom: 8px; }}
   details.branch > p.sub {{ margin: 0 0 10px 20px; }}
   footer {{ color: {MUTED}; font-size: 12px; margin-top: 16px; }}
 """
@@ -330,7 +335,7 @@ def render(week_end, week, built_on):
     grades = " ".join(badge(grade) for grade in GRADE_COLOURS)
     hierarchy = section(
         "By manager",
-        "1 is the best. Tap a manager, then a branch, to open it. ▲ ▼: places moved since last week. "
+        "1 is the best. Tap a manager, then a branch, then a meal, to open it. ▲ ▼: places moved since last week. "
         f"#: the branch's rank among all branches.<br>Grades, best to worst: {grades}",
         by_manager(week))
 

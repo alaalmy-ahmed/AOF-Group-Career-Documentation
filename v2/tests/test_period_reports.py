@@ -147,7 +147,8 @@ def test_quarterly_and_yearly_are_by_branch():
 
 def test_meals_show_missed_counts_and_descriptions_but_no_times():
     html = page("quarter", date(2026, 7, 1))
-    assert "<li>Arabi Sop: 2 issues · 1 missed<ul><li>Wrong sauce quantity ×2</li></ul></li>" in html
+    assert ('<details class="meal"><summary>Arabi Sop: 2 issues · 1 missed</summary>'
+            "<ul><li>Wrong sauce quantity ×2</li></ul></details>") in html
 
 
 def test_a_period_not_over_yet_says_so():
@@ -158,7 +159,7 @@ def test_a_period_not_over_yet_says_so():
 def test_the_first_period_has_nothing_to_compare_with():
     html = page("year", date(2026, 1, 1), with_previous=False)
     assert html.count("no data for last year") == 2
-    assert html.count('<span class="same">new</span>') == 3               # 1 manager, 2 branches
+    assert ">new<" not in html                                             # no rank last year: no mark at all
 
 
 def test_plotly_is_inside_the_file_once():

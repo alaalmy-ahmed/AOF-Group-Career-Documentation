@@ -33,7 +33,7 @@ def test_kpi_change(this, last, unit, lower_is_better, expected):
     (2, 5, ("▲ 3", "good")),        # 5th last week, 2nd now: up 3 places
     (5, 2, ("▼ 3", "bad")),
     (4, 4, ("–", "same")),
-    (4, None, ("new", "same")),     # wasn't ranked last week
+    (4, None, ("", "same")),        # wasn't ranked last week: nothing to compare with, no mark
 ])
 def test_rank_change(rank, last_rank, expected):
     assert rank_change(rank, last_rank) == expected
@@ -76,7 +76,8 @@ def tiny_week(with_last_week=True):
     "Olaya & Co"; Manager A runs Malaz and Al Nakheel. Only Al Nakheel had
     problems: on Arabi Sop, "Wrong sauce quantity" twice and a task missed on
     Thu Jan 8 at 4-8 pm; on French Fries, "Bread not heated" once and a task
-    missed on Fri Jan 9 at 12-4 pm."""
+    missed on Fri Jan 9 at 12-4 pm; on Cutting Shawarma, only a task missed on
+    Sat Jan 10 at 4-8 pm (no issues)."""
     last = (lambda rank: rank) if with_last_week else (lambda rank: None)
     kpis = [(WEEK_END, 95.0, 3)] + ([(LAST_WEEK, 90.0, 5)] if with_last_week else [])
     return {
@@ -93,6 +94,7 @@ def tiny_week(with_last_week=True):
         "meals": pd.DataFrame([
             ("B1", "Arabi Sop", 1, 2),
             ("B1", "French Fries", 1, 1),
+            ("B1", "Cutting Shawarma", 1, 0),
         ], columns=["branch_code", "meal", "missed", "issues"]),
         "descriptions": pd.DataFrame([
             ("B1", "Arabi Sop", "Wrong sauce quantity", 2),
@@ -101,6 +103,7 @@ def tiny_week(with_last_week=True):
         "missed": pd.DataFrame([
             ("B1", "Arabi Sop", date(2026, 1, 8), "4-8 pm"),
             ("B1", "French Fries", date(2026, 1, 9), "12-4 pm"),
+            ("B1", "Cutting Shawarma", date(2026, 1, 10), "4-8 pm"),
         ], columns=["branch_code", "meal", "task_date", "due_time"]),
     }
 
@@ -158,8 +161,13 @@ def test_arabic_names_keep_their_place():
 def test_each_branch_lists_its_meals_then_descriptions():
     branches = blocks(page_of(tiny_week()), "branch")
 
-    assert ("<ul><li>Arabi Sop: 2 issues · 1 missed (Thu 8, 4-8 pm)<ul><li>Wrong sauce quantity ×2</li></ul></li>"
-            "<li>French Fries: 1 issue · 1 missed (Fri 9, 12-4 pm)<ul><li>Bread not heated</li></ul></li></ul>"
+    # Each meal with issues opens on its own, with only its own issues inside;
+    # a meal with only missed tasks has nothing to open, so it's a plain line
+    assert ('<details class="meal"><summary>Arabi Sop: 2 issues · 1 missed (Thu 8, 4-8 pm)</summary>'
+            "<ul><li>Wrong sauce quantity ×2</li></ul></details>"
+            '<details class="meal"><summary>French Fries: 1 issue · 1 missed (Fri 9, 12-4 pm)</summary>'
+            "<ul><li>Bread not heated</li></ul></details>"
+            '<p class="meal">Cutting Shawarma: 1 missed (Sat 10, 4-8 pm)</p>'
             ) in branches["Al Nakheel - النخيل"]
     assert "No missed tasks or issues." in branches["Malaz"]
     assert "Arabi Sop" not in branches["Malaz"] and "Arabi Sop" not in branches["Olaya &amp; Co"]
@@ -169,4 +177,6 @@ def test_the_first_week_has_nothing_to_compare_with():
     page = page_of(tiny_week(with_last_week=False))
 
     assert page.count("no data for last week") == 2
-    assert page.count('<span class="same">new</span>') == 5         # 3 branches, 2 managers
+    # No ranks last week: no ▲ ▼ marks on anyone, and no "new" either
+    assert '<span class="good">' not in page and '<span class="bad">' not in page
+    assert ">new<" not in page

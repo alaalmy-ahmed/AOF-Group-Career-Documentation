@@ -421,17 +421,20 @@ The page has two parts:
 | Part | Shows | Read from (dbt view) |
 |---|---|---|
 | Two headline numbers | The week's submission rate and quality issues for all branches, with the change since the week before | `weekly_kpis` (new) |
-| By manager | The managers in rank order, each with grade, % submitted, issues and places moved since last week. Tap a manager to see their branches, shown the same way. Tap a branch to see its problem meals ("Arabi Sop: 2 issues · 1 missed (Thu 15, 4-8 pm)") and, under each meal, its issue descriptions ("Wrong sauce quantity ×2") | `manager_weekly_ranking`, `branch_weekly_ranking`, and the new `branch_meal_weekly`, `issue_descriptions_weekly`, `missed_tasks` |
+| By manager | The managers in rank order, each with grade, % submitted, issues and places moved since last week. Tap a manager to see their branches, shown the same way. Tap a branch to see its problem meals ("Arabi Sop: 2 issues · 1 missed (Thu 15, 4-8 pm)"), then tap a meal to see its issue descriptions ("Wrong sauce quantity ×2") | `manager_weekly_ranking`, `branch_weekly_ranking`, and the new `branch_meal_weekly`, `issue_descriptions_weekly`, `missed_tasks` |
 
-An opened branch looks like this:
+An opened branch, with one of its meals opened, looks like this:
 
 ```
 ▾ #11 Al Olaya - العليا  [Excellent]  ▼ 10
       97.6% submitted · 1 issue
-      • Heating Shawarma: 1 issue
-          ◦ Station not cleaned between orders
-      • Arabi Sop: 1 missed (Fri 16, 12-4 pm)
+      ▾ Heating Shawarma: 1 issue
+          • Station not cleaned between orders
+        Arabi Sop: 1 missed (Fri 16, 12-4 pm)
 ```
+
+A meal with issues opens on its own (▸). A meal with only missed tasks has nothing inside, so it's a plain line.
+A manager or branch with no rank the week before shows no ▲ ▼ mark, since there's nothing to compare with.
 
 ### Colours that say good or bad
 
@@ -514,7 +517,7 @@ The other three Power BI reports are replaced by web pages for management, built
 | Trend: two line charts, % submitted and quality issues | Week by week: the weeks that end in the month | Month by month | Month by month |
 | Ranking chart | Managers | Branches | Branches |
 | By meal chart | | | Issues and missed tasks for each meal, all branches together |
-| Lists | Manager → branches → meals → descriptions, tap to open (like the weekly) | The managers, then branch → meals → descriptions | Same as quarterly |
+| Lists | Manager → branches → meals → descriptions, each tap to open (like the weekly) | The managers, then branch → meals → descriptions, each tap to open | Same as quarterly |
 
 The grade colours, the ▲ ▼ changes and the tap-to-open lists are the weekly dashboard's own pieces, reused.
 
@@ -582,16 +585,17 @@ REPORT_DATE=2026-10-26 python v2/period_reports.py year     # 2026, so far
     - the year so far is the history plus the sample;
     - a month with no data stops.
   - dbt: five new unit tests, the monthly one moved, and checks on every new view.
-- **Planted bugs:** 22 bugs, one at a time. For example:
+- **Planted bugs:** 27 bugs, one at a time. For example:
   - quarters starting in the wrong month, a quarter compared with the month before, the quarter's report written every month, "vs last week" in a monthly report;
   - a quarterly report organised by manager, the meal chart in every report, Plotly loaded from the internet, the rate scale starting at 0;
   - branch-months counted as branches, a miss counted on every meal, a monthly run on every day, a fake history that never rotates;
-  - the issues drawn as dots without a line, the score left as 0 to 1, the scale cut to 60–100%, a grade line at 0.70 instead of 70%.
+  - the issues drawn as dots without a line, the score left as 0 to 1, the scale cut to 60–100%, a grade line at 0.70 instead of 70%;
+  - after the meals became tap-to-open and "new" was dropped (code shared with the weekly): "new" shown again, meals that don't open, a missed-only meal made to open, and a meal showing its branch's other meals' issues or missed times.
 
   Each one made a test fail. One got past the first version of the tests: **branches ranked against all months at once** instead of their own month. That doesn't change the order within a month, only the grades, and the unit test's numbers happened to give the same grades. A new unit test has a July branch that is Excellent against July's best and only Good against August's.
 
 **Known limits:**
-- **No comparison with last year** until the v1 history is migrated: the yearly report says "no data for last year" and marks every branch and manager "new".
+- **No comparison with last year** until the v1 history is migrated: the yearly report says "no data for last year" and shows no ▲ ▼ marks. (A first version marked every branch "new", which only meant "not ranked last year"; it was dropped.)
 - **About 5 MB per file,** because Plotly is inside. Fine for email. Loading Plotly from the internet instead would make them small, but then they'd need the internet to open.
 - **The charts need JavaScript:** open the reports in a browser on a computer, not in a phone's attachment preview.
 - **The monthly trend uses the Wednesday–Tuesday weeks that end in the month,** with the weekly reports' own numbers. So a month's first days can belong to a week shown in the month before, and the weeks don't add up exactly to the month's headline.

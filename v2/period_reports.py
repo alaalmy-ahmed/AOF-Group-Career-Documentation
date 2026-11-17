@@ -313,7 +313,8 @@ def manager_list(managers):
 
 
 def branch_list(data):
-    """The quarterly and yearly branches, in rank order: tap a branch to see its meals."""
+    """The quarterly and yearly branches, in rank order: tap a branch to see its
+    meals, then a meal to see its issues."""
     html = ""
     for b in data["branches"].itertuples():
         html += (f'<details class="branch top"><summary>#{b.rank} <strong><bdi>{escape(b.branch)}</bdi></strong> '
@@ -377,12 +378,12 @@ def render(period, start, data, last_day, built_on):
     changes = f"▲ ▼: places moved since {than}."
     if period == "month":
         lists = section("By manager",
-                        f"1 is the best. Tap a manager, then a branch, to open it. {changes} "
+                        f"1 is the best. Tap a manager, then a branch, then a meal, to open it. {changes} "
                         "#: the branch's rank among all branches.", by_manager(data))
     else:
         lists = (section("Managers", "Each branch counts, month by month, for the manager who ran it that month. "
                          f"1 is the best. {changes}", manager_list(data["managers"]))
-                 + section("Branches", f"1 is the best. Tap a branch to see its meals. {changes}", branch_list(data)))
+                 + section("Branches", f"1 is the best. Tap a branch to see its meals, then a meal to see its issues. {changes}", branch_list(data)))
 
     return f"""<!doctype html>
 <html lang="en">
