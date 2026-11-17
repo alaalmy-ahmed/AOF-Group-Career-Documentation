@@ -1,7 +1,8 @@
 """
 Tests that need Postgres: the load (load_workbook.py), the dbt models
-(build_models.py), the weekly Excel ranking (weekly_ranking.py) and the weekly
-dashboard (weekly_dashboard.py). They run
+(build_models.py), the weekly Excel ranking (weekly_ranking.py), the weekly
+dashboard (weekly_dashboard.py) and the monthly, quarterly and yearly reports
+(period_reports.py, on the fake history too). They run
 on a copy of the sample's daily files in a test database, and are skipped
 unless TEST_PGDATABASE is set (see the `database` fixture in conftest.py).
 The dbt tests are also skipped when dbt isn't installed (DBT_EXECUTABLE).
@@ -17,7 +18,9 @@ import psycopg2
 import pytest
 
 import build_models
+import fake_history
 import load_workbook
+import period_reports
 import weekly_dashboard
 import weekly_ranking
 from conftest import count_rows
@@ -250,4 +253,75 @@ def test_a_dashboard_week_with_no_data_stops(built, tmp_path, monkeypatch):
     monkeypatch.setattr(weekly_dashboard, "REPORT_DATE", date(2026, 11, 10))
     with pytest.raises(SystemExit):
         weekly_dashboard.main()
+    assert not (tmp_path / "out").exists()
+
+
+# --------------------------------------------------------------------------------------------------------
+# The monthly, quarterly and yearly reports (step 10), on the fake history (Jul 1 - Oct 12) and the sample
+
+@pytest.fixture
+def built_with_history(database, monkeypatch):
+    """The fake history and the sample loaded, then dbt built. Returns the
+    history's tasks and issues, and the Managers rows for July-September."""
+    if shutil.which(build_models.DBT_EXECUTABLE) is None:
+        pytest.skip(f"dbt not found (DBT_EXECUTABLE={build_models.DBT_EXECUTABLE!r})")
+    monkeypatch.setattr(load_workbook, "DATABASE", database)
+    monkeypatch.setattr(period_reports, "DATABASE", database)
+    monkeypatch.setenv("PGDATABASE", database)
+    tasks, issues = fake_history.load_history(database)
+    load_workbook.main()
+    with pytest.raises(SystemExit) as exit_code:
+        build_models.main()
+    assert exit_code.value.code == 0
+    _, _, managers = fake_history.make_history(read_intake()[0][2])
+    return tasks, issues, managers
+
+
+def test_the_oct_1_run_writes_september_and_q3(built_with_history, tmp_path, monkeypatch):
+    tasks, issues, managers = built_with_history
+    out = tmp_path / "out"                                  # tmp_path also holds the intake copy
+    monkeypatch.setattr(period_reports, "OUTPUT_DIR", str(out))
+    monkeypatch.setattr(period_reports, "REPORT_DATE", date(2026, 9, 30))
+    monkeypatch.setattr(period_reports.sys, "argv", ["period_reports.py"])
+    period_reports.main()
+    assert sorted(path.name for path in out.iterdir()) == ["Monthly Report 2026-09.html",
+                                                           "Quarterly Report 2026-Q3.html"]
+
+    # Q3, counted straight from the fake history
+    q3 = period_reports.read_period("quarter", date(2026, 7, 1))
+    q3_issues = issues[issues["Date"] <= date(2026, 9, 30)]
+    assert q3["kpis"].set_index("period_start").loc[date(2026, 7, 1), "quality_issues"] == len(q3_issues)
+    assert dict(zip(q3["by_meal"]["meal"], q3["by_meal"]["issues"])) == q3_issues["Meal"].value_counts().to_dict()
+    assert q3["descriptions"]["issues"].sum() == len(q3_issues)
+    assert len(q3["branches"]) == 36 and len(q3["managers"]) == 10
+    assert q3["managers"]["branch_months"].sum() == 36 * 3              # every branch, every month, once
+
+    # September: each branch under the manager who ran it in September
+    september = period_reports.read_period("month", date(2026, 9, 1))
+    ran = managers[managers["Month"] == date(2026, 9, 1)]
+    assert dict(zip(september["branches"]["branch"], september["branches"]["manager"])) == \
+        dict(zip(ran["Branch"], ran["Manager"]))
+
+
+def test_the_year_so_far(built_with_history, tmp_path, monkeypatch):
+    tasks, issues, _ = built_with_history
+    monkeypatch.setattr(period_reports, "OUTPUT_DIR", str(tmp_path / "out"))
+    monkeypatch.setattr(period_reports, "REPORT_DATE", date(2026, 10, 26))
+    monkeypatch.setattr(period_reports.sys, "argv", ["period_reports.py", "year"])
+    period_reports.main()
+    page = (tmp_path / "out" / "Yearly Report 2026.html").read_text(encoding="utf-8")
+
+    _, sample_issues, _ = sample_tables()
+    assert "2026 · so far, to 26 Oct" in page
+    assert f'<div class="value">{len(issues) + len(sample_issues)}</div>' in page    # history + sample
+    year = period_reports.read_period("year", date(2026, 1, 1))
+    assert list(year["trend"]["point"]) == [date(2026, month, 1) for month in (7, 8, 9, 10)]
+
+
+def test_a_period_with_no_data_stops(built_with_history, tmp_path, monkeypatch):
+    monkeypatch.setattr(period_reports, "OUTPUT_DIR", str(tmp_path / "out"))
+    monkeypatch.setattr(period_reports, "REPORT_DATE", date(2026, 12, 31))
+    monkeypatch.setattr(period_reports.sys, "argv", ["period_reports.py"])
+    with pytest.raises(SystemExit):
+        period_reports.main()
     assert not (tmp_path / "out").exists()

@@ -134,17 +134,18 @@ def read_week(week_end):
 # --------------------------------------------------------------------------------------------------------
 # Wording
 
-def kpi_change(this, last, unit="", lower_is_better=False):
+def kpi_change(this, last, unit="", lower_is_better=False, than="last week"):
     """The line under a headline number, and whether it's good or bad news:
-    ("▼ 1.2 pts vs last week", "bad")."""
+    ("▼ 1.2 pts vs last week", "bad"). The monthly, quarterly and yearly
+    reports pass than="last month" and so on."""
     if last is None:
-        return "no data for last week", "same"
+        return f"no data for {than}", "same"
     difference = round(this - last, 1)
     if difference == 0:
-        return "same as last week", "same"
+        return f"same as {than}", "same"
     arrow = "▲" if difference > 0 else "▼"
     better = difference < 0 if lower_is_better else difference > 0
-    return f"{arrow} {abs(difference):g}{unit} vs last week", "good" if better else "bad"
+    return f"{arrow} {abs(difference):g}{unit} vs {than}", "good" if better else "bad"
 
 
 def rank_change(rank, last_rank):
@@ -172,12 +173,13 @@ def when(day, due_time):
 
 def meal_line(meal, issues, missed, missed_when):
     """'Arabi Sop: 2 issues · 1 missed (Thu 15, 4-8 pm)': only the parts
-    that aren't zero, with when each missed task was due."""
+    that aren't zero, with when each missed task was due. With no times (the
+    monthly, quarterly and yearly reports), just '1 missed'."""
     parts = []
     if issues:
         parts.append(plural(issues, "issue", "issues"))
     if missed:
-        parts.append(f"{missed} missed ({'; '.join(missed_when)})")
+        parts.append(f"{missed} missed" + (f" ({'; '.join(missed_when)})" if missed_when else ""))
     return f"{meal}: {' · '.join(parts)}"
 
 
@@ -256,6 +258,10 @@ def by_manager(week):
             f'<span class="sub">{plural(m.branches, "branch", "branches")} · {m.done_rate:g}% submitted · '
             f'{plural(m.issues, "issue", "issues")}</span></summary>\n{branch_html}</details>\n')
     return html
+
+
+def footer(built_on):
+    return f"<footer>AOF Group · built {built_on} by Ahmed Khaled, Data Analytics Engineer</footer>"
 
 
 def section(title, note, content):
@@ -345,7 +351,7 @@ def render(week_end, week, built_on):
 <section class="tiles">{tiles}
 </section>
 {hierarchy}
-<footer>AOF Group · built {built_on} by Ahmed Khaled, Data Analytics Engineer</footer>
+{footer(built_on)}
 </main>
 </body>
 </html>

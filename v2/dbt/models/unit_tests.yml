@@ -207,17 +207,23 @@ unit_tests:
         - {manager: Y, managers_rank: 1, completion_grade: Fair, score: "0.8980"}
         - {manager: X, managers_rank: 2, completion_grade: Fair, score: "0.8500"}
 
-  # ── manager_monthly_ranking ─────────────────────────────────────────────
+  # ── manager_period_ranking ──────────────────────────────────────────────
 
-  - name: monthly_ranking_follows_the_rotation
+  - name: manager_ranking_follows_the_rotation
     description: >
       X runs A in October and B in November; Y the other way round (10 tasks a
-      month each).
+      month each). This was step 7's monthly ranking test; the month rows
+      haven't changed.
       October:  X (A): done 100, 0 issues -> score 0.85 + 0.15 = 1.00, rank 1
                 Y (B): done 80, 1 issue   -> score 0.85 * 0.8 + 0 = 0.68, rank 2
       November: Y (A): done 90, 0 issues  -> score 0.85 * 0.9 + 0.15 = 0.915, rank 1
                 X (B): done 100, 3 issues -> score 0.85 + 0 = 0.85, rank 2
-    model: manager_monthly_ranking
+      Q4 (and 2026), from the two branch-months each:
+                X: done (100 + 100) / 2 = 100, issues (0 + 3) / 2 = 1.5 per branch-month
+                   -> 0.85 * 1 + 0.15 * (1 - 1.5/1.5) = 0.85, rank 1, Fair
+                Y: done (80 + 90) / 2 = 85, issues (1 + 0) / 2 = 0.5
+                   -> 0.85 * 0.85 + 0.15 * (1 - 0.5/1.5) = 0.8225, rank 2, Fair
+    model: manager_period_ranking
     given:
       - input: ref('branch_daily')
         rows:
@@ -227,10 +233,14 @@ unit_tests:
           - {task_date: 2026-11-10, branch_code: B, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 3}
     expect:
       rows:
-        - {month: 2026-10-01, manager: X, branches: 1, done_rate: 100.0, issues_per_branch: 0.0, number_of_issues: 0, managers_rank: 1, completion_grade: Excellent, score: "1.0000"}
-        - {month: 2026-10-01, manager: Y, branches: 1, done_rate: 80.0, issues_per_branch: 1.0, number_of_issues: 1, managers_rank: 2, completion_grade: Terrible, score: "0.6800"}
-        - {month: 2026-11-01, manager: Y, branches: 1, done_rate: 90.0, issues_per_branch: 0.0, number_of_issues: 0, managers_rank: 1, completion_grade: Good, score: "0.9150"}
-        - {month: 2026-11-01, manager: X, branches: 1, done_rate: 100.0, issues_per_branch: 3.0, number_of_issues: 3, managers_rank: 2, completion_grade: Fair, score: "0.8500"}
+        - {period: month, period_start: 2026-10-01, manager: X, branches: 1, branch_months: 1, done_rate: 100.0, issues_per_branch_month: 0.0, number_of_issues: 0, managers_rank: 1, completion_grade: Excellent, score: "1.0000"}
+        - {period: month, period_start: 2026-10-01, manager: Y, branches: 1, branch_months: 1, done_rate: 80.0, issues_per_branch_month: 1.0, number_of_issues: 1, managers_rank: 2, completion_grade: Terrible, score: "0.6800"}
+        - {period: month, period_start: 2026-11-01, manager: Y, branches: 1, branch_months: 1, done_rate: 90.0, issues_per_branch_month: 0.0, number_of_issues: 0, managers_rank: 1, completion_grade: Good, score: "0.9150"}
+        - {period: month, period_start: 2026-11-01, manager: X, branches: 1, branch_months: 1, done_rate: 100.0, issues_per_branch_month: 3.0, number_of_issues: 3, managers_rank: 2, completion_grade: Fair, score: "0.8500"}
+        - {period: quarter, period_start: 2026-10-01, manager: X, branches: 2, branch_months: 2, done_rate: 100.0, issues_per_branch_month: 1.5, number_of_issues: 3, managers_rank: 1, completion_grade: Fair, score: "0.8500"}
+        - {period: quarter, period_start: 2026-10-01, manager: Y, branches: 2, branch_months: 2, done_rate: 85.0, issues_per_branch_month: 0.5, number_of_issues: 1, managers_rank: 2, completion_grade: Fair, score: "0.8225"}
+        - {period: year, period_start: 2026-01-01, manager: X, branches: 2, branch_months: 2, done_rate: 100.0, issues_per_branch_month: 1.5, number_of_issues: 3, managers_rank: 1, completion_grade: Fair, score: "0.8500"}
+        - {period: year, period_start: 2026-01-01, manager: Y, branches: 2, branch_months: 2, done_rate: 85.0, issues_per_branch_month: 0.5, number_of_issues: 1, managers_rank: 2, completion_grade: Fair, score: "0.8225"}
 
   # ── weekly_kpis ─────────────────────────────────────────────────────────
 
@@ -354,3 +364,135 @@ unit_tests:
         - {branch_code: A, task_date: 2026-01-07, week_end: 2026-01-13, meal: Arabi Sop, due_time: "12-4 pm"}
         - {branch_code: A, task_date: 2026-01-13, week_end: 2026-01-13, meal: French Fries, due_time: "4-8 pm"}
         - {branch_code: B, task_date: 2026-01-14, week_end: 2026-01-20, meal: Arabi Sop, due_time: "12-4 pm"}
+
+  # ── period_kpis ─────────────────────────────────────────────────────────
+
+  - name: period_kpis_for_months_quarters_and_years
+    description: >
+      Sep 30 (Q3) and Oct 1 (Q4) are in different months and quarters but the
+      same year. 2026: 40 due, 6 missed -> 100 - 15.0 = 85.0.
+    model: period_kpis
+    given:
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-09-30, tasks_due: 20, tasks_missed: 4, tasks_submitted: 16, quality_issues: 3}
+          - {task_date: 2026-10-01, tasks_due: 10, tasks_missed: 1, tasks_submitted: 9, quality_issues: 0}
+          - {task_date: 2026-10-02, tasks_due: 10, tasks_missed: 1, tasks_submitted: 9, quality_issues: 2}
+    expect:
+      rows:
+        - {period: month, period_start: 2026-09-01, tasks_due: 20, tasks_missed: 4, submission_rate: 80.0, quality_issues: 3}
+        - {period: month, period_start: 2026-10-01, tasks_due: 20, tasks_missed: 2, submission_rate: 90.0, quality_issues: 2}
+        - {period: quarter, period_start: 2026-07-01, tasks_due: 20, tasks_missed: 4, submission_rate: 80.0, quality_issues: 3}
+        - {period: quarter, period_start: 2026-10-01, tasks_due: 20, tasks_missed: 2, submission_rate: 90.0, quality_issues: 2}
+        - {period: year, period_start: 2026-01-01, tasks_due: 40, tasks_missed: 6, submission_rate: 85.0, quality_issues: 5}
+
+  # ── branch_period_ranking ───────────────────────────────────────────────
+
+  - name: branch_ranking_per_month_and_quarter
+    description: >
+      Two branches over two months of one quarter (10 tasks a month each).
+      July:   A done 100, 2 issues -> 0.90 + 0.10 * 0 = 0.90 (rank 2, Fair); B done 100, 0 -> 1.00 (rank 1)
+      August: A done 100, 0 -> 1.00 (rank 1); B done 80, 0 -> 0.90 * 0.8 + 0.10 = 0.82 (rank 2, Fair)
+      Q3:     A done 100, 2 issues -> 0.90 (rank 2, Fair); B done 90, 0 -> 0.90 * 0.9 + 0.10 = 0.91
+              (rank 1, Good). B moved to manager Z in August, so Z is B's manager for the quarter.
+    model: branch_period_ranking
+    given:
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-07-15, branch_code: A, branch: A, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 2}
+          - {task_date: 2026-07-15, branch_code: B, branch: B, manager: Y, tasks_due: 10, tasks_missed: 0, quality_issues: 0}
+          - {task_date: 2026-08-15, branch_code: A, branch: A, manager: X, tasks_due: 10, tasks_missed: 0, quality_issues: 0}
+          - {task_date: 2026-08-15, branch_code: B, branch: B, manager: Z, tasks_due: 10, tasks_missed: 2, quality_issues: 0}
+    expect:
+      rows:
+        - {period: month, period_start: 2026-07-01, branch: A, manager: X, done_rate: 100.0, number_of_issues: 2, branches_rank: 2, completion_grade: Fair}
+        - {period: month, period_start: 2026-07-01, branch: B, manager: Y, done_rate: 100.0, number_of_issues: 0, branches_rank: 1, completion_grade: Excellent}
+        - {period: month, period_start: 2026-08-01, branch: A, manager: X, done_rate: 100.0, number_of_issues: 0, branches_rank: 1, completion_grade: Excellent}
+        - {period: month, period_start: 2026-08-01, branch: B, manager: Z, done_rate: 80.0, number_of_issues: 0, branches_rank: 2, completion_grade: Fair}
+        - {period: quarter, period_start: 2026-07-01, branch: A, manager: X, done_rate: 100.0, number_of_issues: 2, branches_rank: 2, completion_grade: Fair}
+        - {period: quarter, period_start: 2026-07-01, branch: B, manager: Z, done_rate: 90.0, number_of_issues: 0, branches_rank: 1, completion_grade: Good}
+        - {period: year, period_start: 2026-01-01, branch: A, manager: X, done_rate: 100.0, number_of_issues: 2, branches_rank: 2, completion_grade: Fair}
+        - {period: year, period_start: 2026-01-01, branch: B, manager: Z, done_rate: 90.0, number_of_issues: 0, branches_rank: 1, completion_grade: Good}
+
+  - name: each_period_is_ranked_on_its_own
+    description: >
+      20 tasks a month. July: A misses 2 (done 90), B misses 5 (done 75); August
+      both miss none. In July the best done rate is 90, so A scores 1.00
+      (Excellent) and B 0.90 * 75/90 + 0.10 = 0.85 (Fair). Dividing by
+      August's 100 instead would make A 0.91, only Good.
+      Q3: A done 95, B 87.5 -> A 1.00, B 0.90 * 87.5/95 + 0.10 = 0.93 (Good).
+    model: branch_period_ranking
+    given:
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-07-15, branch_code: A, branch: A, manager: X, tasks_due: 20, tasks_missed: 2, quality_issues: 0}
+          - {task_date: 2026-07-15, branch_code: B, branch: B, manager: X, tasks_due: 20, tasks_missed: 5, quality_issues: 0}
+          - {task_date: 2026-08-15, branch_code: A, branch: A, manager: X, tasks_due: 20, tasks_missed: 0, quality_issues: 0}
+          - {task_date: 2026-08-15, branch_code: B, branch: B, manager: X, tasks_due: 20, tasks_missed: 0, quality_issues: 0}
+    expect:
+      rows:
+        - {period: month, period_start: 2026-07-01, branch: A, branches_rank: 1, completion_grade: Excellent}
+        - {period: month, period_start: 2026-07-01, branch: B, branches_rank: 2, completion_grade: Fair}
+        - {period: month, period_start: 2026-08-01, branch: A, branches_rank: 1, completion_grade: Excellent}
+        - {period: month, period_start: 2026-08-01, branch: B, branches_rank: 1, completion_grade: Excellent}
+        - {period: quarter, period_start: 2026-07-01, branch: A, branches_rank: 1, completion_grade: Excellent}
+        - {period: quarter, period_start: 2026-07-01, branch: B, branches_rank: 2, completion_grade: Good}
+        - {period: year, period_start: 2026-01-01, branch: A, branches_rank: 1, completion_grade: Excellent}
+        - {period: year, period_start: 2026-01-01, branch: B, branches_rank: 2, completion_grade: Good}
+
+  # ── branch_meal_period and issue_descriptions_period ────────────────────
+
+  - name: branch_meals_per_period
+    description: >
+      Arabi Sop is due on Jul 15 and Aug 15; A misses the August one and gets
+      an issue on the July one. Each month has its own row, and the quarter
+      and the year add both up.
+    model: branch_meal_period
+    given:
+      - input: source('ops', 'scheduled_tasks')
+        rows:
+          - {task_id: 1, task_date: 2026-07-15, meal_id: 1}
+          - {task_id: 2, task_date: 2026-08-15, meal_id: 1}
+      - input: source('ops', 'task_misses')
+        rows:
+          - {task_id: 2, branch_code: A}
+      - input: source('ops', 'quality_issues')
+        rows:
+          - {task_id: 1, branch_code: A}
+      - input: source('ops', 'meals')
+        rows:
+          - {meal_id: 1, name: Arabi Sop}
+      - input: ref('branch_daily')
+        rows:
+          - {task_date: 2026-07-15, branch_code: A, branch: Malaz}
+          - {task_date: 2026-08-15, branch_code: A, branch: Malaz}
+    expect:
+      rows:
+        - {period: month, period_start: 2026-07-01, branch: Malaz, meal: Arabi Sop, tasks_due: 1, tasks_missed: 0, quality_issues: 1}
+        - {period: month, period_start: 2026-08-01, branch: Malaz, meal: Arabi Sop, tasks_due: 1, tasks_missed: 1, quality_issues: 0}
+        - {period: quarter, period_start: 2026-07-01, branch: Malaz, meal: Arabi Sop, tasks_due: 2, tasks_missed: 1, quality_issues: 1}
+        - {period: year, period_start: 2026-01-01, branch: Malaz, meal: Arabi Sop, tasks_due: 2, tasks_missed: 1, quality_issues: 1}
+
+  - name: issue_descriptions_per_period
+    description: >
+      "Wrong sauce quantity" on Jul 15 and Aug 15: once in each month, twice
+      in the quarter and the year.
+    model: issue_descriptions_period
+    given:
+      - input: source('ops', 'quality_issues')
+        rows:
+          - {issue_id: 1, task_id: 1, branch_code: A, description: Wrong sauce quantity}
+          - {issue_id: 2, task_id: 2, branch_code: A, description: Wrong sauce quantity}
+      - input: source('ops', 'scheduled_tasks')
+        rows:
+          - {task_id: 1, task_date: 2026-07-15, meal_id: 1}
+          - {task_id: 2, task_date: 2026-08-15, meal_id: 1}
+      - input: source('ops', 'meals')
+        rows:
+          - {meal_id: 1, name: Arabi Sop}
+    expect:
+      rows:
+        - {period: month, period_start: 2026-07-01, branch_code: A, meal: Arabi Sop, description: Wrong sauce quantity, issues: 1}
+        - {period: month, period_start: 2026-08-01, branch_code: A, meal: Arabi Sop, description: Wrong sauce quantity, issues: 1}
+        - {period: quarter, period_start: 2026-07-01, branch_code: A, meal: Arabi Sop, description: Wrong sauce quantity, issues: 2}
+        - {period: year, period_start: 2026-01-01, branch_code: A, meal: Arabi Sop, description: Wrong sauce quantity, issues: 2}

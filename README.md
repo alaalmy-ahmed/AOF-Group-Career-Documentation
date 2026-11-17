@@ -67,6 +67,7 @@ v1 works, but the notebooks are started by hand, nothing reports a failed run, a
 | 7 | dbt builds tested reporting views: daily branch KPIs, weekly and monthly rankings |
 | 8 | The entry person's daily files go into an intake folder and are read from there; only the last 10 days are kept |
 | 9 | A web page for the area managers replaces the Power BI weekly report: each manager → their branches → problem meals → issue descriptions, with grades in colour. Made for phones, with no JavaScript |
+| 10 | Monthly, quarterly and yearly reports for management replace the other three Power BI reports: interactive Plotly charts, then the ranking down to meals and descriptions |
 
 Design decisions, and how each step was tested: [v2/README.md](v2/README.md).
 
@@ -133,7 +134,7 @@ One piece was added for this portfolio and isn't used at AOF: the **SQL version 
 
 `Python` · `pandas` · `openpyxl` · `PostgreSQL` · `psycopg2` · `Jupyter` · `Power BI`
 
-v2 adds `Airflow` · `dbt` · `pytest`
+v2 adds `Airflow` · `dbt` · `pytest` · `Plotly`
 
 ## Author
 

@@ -40,6 +40,13 @@ Task completion carries most of the weight. Issues count for a little more at ma
 
 In v1 only branches get a grade. Since v2 [step 9](../v2/README.md#step-9-the-weekly-dashboard), managers get one too, from their own score with the same thresholds, so the weekly dashboard can colour both rankings.
 
+## Months, quarters and years (v2)
+
+Since v2 [step 10](../v2/README.md#step-10-monthly-quarterly-and-yearly-reports), the same rankings are computed for every month, quarter and year:
+
+- **Branches:** the weekly method over the longer period: done rate and issues for the whole period, 90/10.
+- **Managers:** branches move between managers every month, so the unit is a **branch-month**: each branch counts, month by month, for the manager who ran it that month. Done rate = average of the manager's branch-month done rates; issues per branch-month; 85/15. In a month, that's the monthly ranking it has always been.
+
 ## Two implementations
 
 Production computes the ranking in pandas. For this portfolio I also wrote it in SQL, with the same method:

@@ -8,12 +8,12 @@ The original system (v1) is at the top of this repository, unchanged; git tag `v
 | 2. Safe re-runnable loads | Done | [load_workbook.py](load_workbook.py) loads the workbook into the schema; a re-run adds nothing twice |
 | 3. Validation before loading | Done | [validate_workbook.py](validate_workbook.py) checks the workbook and lists every problem; the load runs it first |
 | 4. Notebooks → Python modules | Done | The daily distribution and the weekly ranking are scripts; all settings are in [settings.py](settings.py) |
-| 5. Tests | Done | 94 pytest tests in [tests/](tests): checks, intake folder, daily files, load, dbt build, schedule, dashboard |
+| 5. Tests | Done | 127 pytest tests in [tests/](tests): checks, intake folder, daily files, load, dbt build, schedule, dashboards and reports |
 | 6. Scheduling and alerts | Done | Airflow runs the scripts on a schedule and emails the result of each step: [dags/pipeline_dags.py](dags/pipeline_dags.py) |
 | 7. dbt models | Done | Reporting views built and tested by dbt: daily branch KPIs, weekly and monthly rankings, in [dbt/](dbt) |
 | 8. Replacing the Excel intake | Done | The entry person's daily files go into an intake folder and are read from there; only the last 10 days are kept |
 | 9. Weekly dashboard | Done | A web page for the area managers instead of the Power BI weekly report: manager → branches → meals → issue descriptions, with grades in colour: [weekly_dashboard.py](weekly_dashboard.py) |
-| 10. Monthly, quarterly and yearly dashboards | Planned | The other three Power BI reports, for management on computers, with interactive charts |
+| 10. Monthly, quarterly and yearly reports | Done | The other three Power BI reports, for management on computers: Plotly charts, then the ranking down to meals and descriptions: [period_reports.py](period_reports.py) |
 
 ## Running v2
 
@@ -34,8 +34,9 @@ Each day, drop the entry person's daily file into the intake folder (`INTAKE_DIR
 | Weekly, after the load | `python v2/build_models.py` | dbt builds the reporting views and runs their checks |
 | Weekly, after dbt | `python v2/weekly_ranking.py` | Branch and manager ranking for the last Wednesday–Tuesday week, to Excel |
 | Weekly, after dbt | `python v2/weekly_dashboard.py` | The weekly dashboard for the same week: one HTML file |
+| Monthly, on the 1st, after a load and dbt | `python v2/period_reports.py` | Last month's report, plus the quarter's and the year's when they end |
 
-On the sample data, add `REPORT_DATE=2026-10-26` (its last day) in front of the daily, ranking and dashboard commands.
+On the sample data, add `REPORT_DATE=2026-10-26` (its last day) in front of the daily, ranking and dashboard commands. The monthly, quarterly and yearly reports need the sample's fake history; see step 10.
 
 To run the tests: `pytest v2` (see step 5). To have Airflow run the scripts on a schedule, see step 6.
 
@@ -164,7 +165,7 @@ Each file imports what it needs from the others (for example, `from settings imp
 pytest v2                                                     # no database needed
 createdb shawarma_classic_test                                # once
 TEST_PGDATABASE=shawarma_classic_test pytest v2               # adds the database tests
-TEST_PGDATABASE=shawarma_classic_test DBT_EXECUTABLE=~/dbt-venv/bin/dbt pytest v2   # all 94, dbt too (step 7)
+TEST_PGDATABASE=shawarma_classic_test DBT_EXECUTABLE=~/dbt-venv/bin/dbt pytest v2   # all 127, dbt too (step 7)
 ```
 
 A test runs a piece of the pipeline on input where the right answer is known, and fails if the answer changes. Run them after every change: if something breaks, a test names it before it reaches the reports.
@@ -173,10 +174,11 @@ A test runs a piece of the pipeline on input where the right answer is known, an
 |---|---|---|
 | [test_validate_workbook.py](tests/test_validate_workbook.py) | Every check: a clean workbook passes, each mistake gives its exact message and Excel row, later stages wait for earlier ones, the daily check ignores tasks and other days | A tiny workbook (3 branches, 2 tasks, 1 issue), with one thing broken per test |
 | [test_weekly_ranking.py](tests/test_weekly_ranking.py) | Which week the Excel ranking is for. (The ranking math was tested here until step 7 moved it into dbt; its tests are now dbt unit tests.) | Dates |
+| [test_period_reports.py](tests/test_period_reports.py) | The monthly, quarterly and yearly reports (step 10): the periods, which reports are due, each report's layout and charts, Plotly inside the file; and the fake history: valid, rotating, improving | A tiny made-up period, and the fake history |
 | [test_weekly_dashboard.py](tests/test_weekly_dashboard.py) | The weekly dashboard (step 9): the wording, no JavaScript on the page, the grade colours, names escaped, Arabic names kept in place, each manager's branches, each branch's meals with their descriptions and missed times, the first week | A tiny made-up week (2 managers, 3 branches) |
 | [test_intake.py](tests/test_intake.py) | The intake folder (step 8): any file name, lock and hidden files skipped, problems named with their file, the same day in two files, deleting only files older than `KEEP_DAYS` days | The tiny workbook, saved as daily files |
 | [test_distribute_issues.py](tests/test_distribute_issues.py) | One file per branch in its manager's folder, the right rows, each photo on its own row and the same picture as in the day's file; a mistake writes nothing; a missing day's file stops the run | The sample's daily files (the only ones with in-cell photos) |
-| [test_database.py](tests/test_database.py) | A second load adds nothing, a failed load saves nothing, a corrected manager is updated, old files are deleted only after a successful load, dbt builds with every check passing, the daily KPIs, the weekly Excel files and the weekly dashboard add up to the daily files | A copy of the sample's daily files, in a test database |
+| [test_database.py](tests/test_database.py) | A second load adds nothing, a failed load saves nothing, a corrected manager is updated, old files are deleted only after a successful load, dbt builds with every check passing, the daily KPIs, the weekly Excel files and the weekly dashboard add up to the daily files, and the monthly, quarterly and yearly reports to the fake history | A copy of the sample's daily files, in a test database |
 
 The tiny workbook is built in [conftest.py](tests/conftest.py), a file pytest loads by itself. Each test gets a fresh copy.
 
@@ -192,12 +194,13 @@ The database tests are skipped unless `TEST_PGDATABASE` is set. The name must co
 |---|---|---|---|
 | `daily_issues` | Every day, 11:59 pm | `distribute_issues.py` | That day |
 | `weekly_ranking` | Wednesdays, 9:00 am | `load_workbook.py`, `build_models.py` (dbt, step 7), then `weekly_ranking.py` and `weekly_dashboard.py` (step 9) side by side | The day before, so the ranking covers last Wednesday to Tuesday |
+| `period_reports` | The 1st of each month, 10:00 am | `load_workbook.py`, `build_models.py`, then `period_reports.py` (step 10) | The day before: the month's last day |
 
 A DAG is Airflow's word for a list of steps (tasks), the order they run in, and when.
 
 | File | Job |
 |---|---|
-| [dags/pipeline_dags.py](dags/pipeline_dags.py) | The two DAGs |
+| [dags/pipeline_dags.py](dags/pipeline_dags.py) | The three DAGs |
 | [alerts.py](alerts.py) | Sends the emails |
 | [start_airflow.sh](start_airflow.sh) | Starts Airflow |
 | [airflow.env.example](airflow.env.example) | Template for your paths, database password and email settings |
@@ -230,7 +233,7 @@ Leave that terminal open. Open <http://localhost:8080> and log in as `admin` wit
 - **Each run knows which day it's for.** Airflow stamps every run with its scheduled time, and the task turns that into `REPORT_DATE`, in Riyadh time whatever the Mac's clock is set to. So re-running an old run redoes that day, not today. A run started by hand (the ▶ button) uses the time it's started.
 - **Missed days are made up.** If Airflow wasn't running at a scheduled time (the Mac was off), it runs each missed day when it's back, oldest first, one at a time. It counts from `SCHEDULE_START_DATE` in `airflow.env`: set it to the day you switch the schedule on.
 - **Each weekly step waits for the one before** (`load >> models >> [ranking, dashboard]`: the Excel ranking and the dashboard both start once dbt is done). If one fails, the steps after it are skipped.
-- **An email after every step:** `OK` with what the script printed, or `FAILED` with the error. That's one email a day, and four more on Wednesdays. If none arrives, Airflow isn't running.
+- **An email after every step:** `OK` with what the script printed, or `FAILED` with the error. That's one email a day, four more on Wednesdays, and three on the 1st of each month. If none arrives, Airflow isn't running.
 - **No automatic retries:** a mistake in the workbook won't fix itself. Fix it, then click *Clear* on the failed run in Airflow to run it again for its own day.
 
 A failure email looks like this:
@@ -276,11 +279,15 @@ No files were written.
 | [branch_daily](dbt/models/branch_daily.sql) | Branch per day | Tasks due, missed and submitted, submission rate, quality issues, and that month's manager. The weekly, monthly, quarterly and yearly reports can add these rows up |
 | [branch_weekly_ranking](dbt/models/branch_weekly_ranking.sql) | Branch per Wednesday–Tuesday week | Done rate, issues, score, rank and grade, for every week so far |
 | [manager_weekly_ranking](dbt/models/manager_weekly_ranking.sql) | Manager per week | The weekly manager ranking. A branch counts for its manager on the week's last day. Since step 9, with a grade |
-| [manager_monthly_ranking](dbt/models/manager_monthly_ranking.sql) | Manager per month | The same method over a month, with the manager who ran each branch that month |
 | [weekly_kpis](dbt/models/weekly_kpis.sql) | Week | The two KPIs for all branches together: the weekly dashboard's headline numbers (added in step 9) |
 | [branch_meal_weekly](dbt/models/branch_meal_weekly.sql) | Branch, meal and week | Tasks due, missed, and quality issues: the meals under each branch on the weekly dashboard (added in step 9) |
 | [issue_descriptions_weekly](dbt/models/issue_descriptions_weekly.sql) | Branch, meal, description and week | How many times each issue description came up (added in step 9) |
 | [missed_tasks](dbt/models/missed_tasks.sql) | Missed task | Which branch missed which meal, with its day, due time and week (added in step 9) |
+| [period_kpis](dbt/models/period_kpis.sql) | Month, quarter and year | The two KPIs for all branches together (added in step 10) |
+| [branch_period_ranking](dbt/models/branch_period_ranking.sql) | Branch per month, quarter and year | The weekly branch method over a longer period (added in step 10) |
+| [manager_period_ranking](dbt/models/manager_period_ranking.sql) | Manager per month, quarter and year | The manager ranking from branch-months: each branch counts for the manager who ran it that month. Its month rows were `manager_monthly_ranking` until step 10 |
+| [branch_meal_period](dbt/models/branch_meal_period.sql) | Branch, meal, and month, quarter or year | Tasks due, missed, and quality issues (added in step 10) |
+| [issue_descriptions_period](dbt/models/issue_descriptions_period.sql) | Branch, meal, description, and month, quarter or year | How many times each description came up (added in step 10) |
 
 The method is the one in [metrics.md](../docs/metrics.md). `weekly_ranking.py` now only picks one week from the two weekly views and writes the Excel files; it no longer does any maths.
 
@@ -296,14 +303,15 @@ The method is the one in [metrics.md](../docs/metrics.md). `weekly_ranking.py` n
 | [dbt/macros/grade.sql](dbt/macros/grade.sql) | The five grades from a score, used by the branch and manager rankings (added in step 9) |
 | [dbt/tests/submissions_match_the_workbook.sql](dbt/tests/submissions_match_the_workbook.sql) | A check written as a query that returns the rows that break it |
 | [dbt/tests/weekly_counts_agree.sql](dbt/tests/weekly_counts_agree.sql) | The same kind of check for the dashboard: its totals agree at every level, every week (added in step 9) |
-| [build_models.py](build_models.py) | Runs `dbt build`; the weekly Airflow run calls it between the load and the ranking |
+| [dbt/tests/period_counts_agree.sql](dbt/tests/period_counts_agree.sql) | The same for the monthly, quarterly and yearly reports; and each quarter and year is the sum of its months (added in step 10) |
+| [build_models.py](build_models.py) | Runs `dbt build`; the weekly and monthly Airflow runs call it after the load |
 
 ### Checks, every time dbt runs
 
-`dbt build` builds each view and checks it before anything that depends on it. If a check fails, the views after it aren't built, the weekly run's email says which check failed, and the ranking and dashboard steps are skipped.
+`dbt build` builds each view and checks it before anything that depends on it. If a check fails, the views after it aren't built, the run's email says which check failed, and the steps after it (ranking, dashboard, reports) are skipped.
 
-- **14 unit tests:** a few made-up rows in, the exact rows expected out, worked out on paper in each test's description. They cover the tiny week from step 5, ties, a week with no issues, a score of exactly 0.95, each week ranked on its own, the Wednesday–Tuesday weeks, a week that spans a rotation, the managers' 85/15 weights, and the monthly ranking following the rotation. Step 9 added four (the week's KPIs from counts, each branch's meals, the issue descriptions, the missed tasks) and checks the managers' grades.
-- **27 data checks on the real data:** one row per branch per day (and per week and month), no missing managers or ranks, only the five grades, every branch code known, and submissions that add up to the workbook's own *Done Tasks* on every day. Step 9 added twelve, for its four views, the managers' grades and the totals.
+- **19 unit tests:** a few made-up rows in, the exact rows expected out, worked out on paper in each test's description. They cover the tiny week from step 5, ties, a week with no issues, a score of exactly 0.95, each week ranked on its own, the Wednesday–Tuesday weeks, a week that spans a rotation, the managers' 85/15 weights, and the monthly ranking following the rotation. Step 9 added four (the week's KPIs from counts, each branch's meals, the issue descriptions, the missed tasks) and checks the managers' grades. Step 10 moved the monthly ranking's test to `manager_period_ranking`, with quarter and year rows, and added five: months, quarters and years for the KPIs, the branch ranking (twice), the meals and the descriptions.
+- **48 data checks on the real data:** one row per branch per day (and per week and month), no missing managers or ranks, only the five grades, every branch code known, and submissions that add up to the workbook's own *Done Tasks* on every day. Step 9 added twelve, for its four views, the managers' grades and the totals. Step 10's five views and their totals bring twenty-one more.
 
 ### Who managed a branch, month by month
 
@@ -493,3 +501,98 @@ In Airflow it's a fourth step in the Wednesday run. It starts once dbt has built
 - **The sample's last week is partial.** The week before Oct 14–20 only has Oct 13, so issues seem to jump from 8 to 45. Real weeks are full.
 - **The Excel managers summary has no grade column.** It keeps the columns it has always had.
 - **No dark mode:** the page stays light, like the PDF.
+
+## Step 10: monthly, quarterly and yearly reports
+
+The other three Power BI reports are replaced by web pages for management, built on the 1st of each month: `Monthly Report 2026-10.html`, `Quarterly Report 2026-Q3.html` and `Yearly Report 2026.html`, in the output folder. Management reads them on computers, so the charts are interactive ([Plotly](https://plotly.com/python/)): hover over a point or a dot to see its numbers.
+
+**See them:** built from the sample data and its fake history: [September 2026](../docs/sample-monthly-report.html), [Q3 2026](../docs/sample-quarterly-report.html) and [2026 so far](../docs/sample-yearly-report.html). GitHub shows HTML files as code, so download one (*Download raw file*, about 5 MB) and open it in a browser.
+
+| | Monthly | Quarterly | Yearly |
+|---|---|---|---|
+| Headline numbers | Submission rate and quality issues, vs last month | vs last quarter | vs last year |
+| Trend: two line charts, % submitted and quality issues | Week by week: the weeks that end in the month | Month by month | Month by month |
+| Ranking chart | Managers | Branches | Branches |
+| By meal chart | | | Issues and missed tasks for each meal, all branches together |
+| Lists | Manager → branches → meals → descriptions, tap to open (like the weekly) | The managers, then branch → meals → descriptions | Same as quarterly |
+
+The grade colours, the ▲ ▼ changes and the tap-to-open lists are the weekly dashboard's own pieces, reused.
+
+### Why quarterly and yearly start with branches
+
+Branches move between managers every month, so a quarter or a year has no single manager per branch.
+
+- **Monthly is by manager**, like the weekly: in a month, each branch has one manager.
+- **Quarterly and yearly list the branches**, and rank the managers separately, from **branch-months**. Each branch counts, month by month, for the manager who ran it that month. A manager who ran 4 branches for 3 months has 12 branch-months. Their done rate is the average over those 12, their issues are counted per branch-month, and the score keeps the managers' 85/15 weights.
+- Step 7's monthly manager ranking is now the "month" rows of this one, `manager_period_ranking`. Its unit test moved with it.
+
+### The charts
+
+- **Plotly, from Python:** each chart is a few lines of `plotly.graph_objects`, and Plotly writes it into the page. Its chart program is inside every file, about 5 MB, so a report opens without the internet. Unlike the weekly page, these need JavaScript: open them in a browser on a computer.
+- **The ranking is dots, not bars,** with the score as a percentage on a scale from 0% to 100%. Each dot sits at its score, in its grade's colour, and thin lines mark where each grade starts (70%, 80%, 90%, 95%). A first version had bars; scores sit close together, between 80% and 100%, so the bars all looked about the same length.
+- **Both trends are line charts.** The quality issues scale starts at 0, since it counts. The submission rate scale starts just below its lowest point (90%, not 0): left to itself, Plotly zoomed in to 95%–96.5%, and a one-point change looked like a cliff.
+- **Missed tasks are counts only.** Over a month, the day and due time of every miss would make very long lines. The weekly keeps them.
+
+### When they're built
+
+- **A third Airflow schedule, `period_reports`,** runs on the 1st of each month at 10:00 am Riyadh time: `load_workbook.py`, `build_models.py`, then `period_reports.py`. The report date is the day before, the month's last day. The load comes first because the weekly load only runs on Wednesdays.
+- **On Oct 1 it writes September's report and Q3's.** On Jan 1 it writes December's, Q4's and the year's. On other months it writes just the month's.
+- **By hand:** `python v2/period_reports.py` writes the reports due for `REPORT_DATE`. `python v2/period_reports.py quarter year` writes those two whatever the date, up to the report date, marked "so far, to 26 Oct".
+
+### Keeping the numbers right
+
+- **Five new dbt views, each for every month, quarter and year at once:** `period_kpis`, `branch_period_ranking`, `manager_period_ranking`, `branch_meal_period` and `issue_descriptions_period`. The trick is `date_trunc(period, day)`, which turns a day into the first day of its month, quarter or year. Crossed with the three words, one query gives all three.
+- **A new dbt check, `period_counts_agree`.** Every period, the headline, the branches, the meals and the descriptions must add up to the same totals. And every quarter and year must equal the sum of its months.
+
+### The sample's fake history
+
+The sample's 14 daily files cover only Oct 13–26, so a quarterly or yearly report would show one month, and no branch would ever change manager. [sample_data/fake_history.py](sample_data/fake_history.py) adds July 1 – October 12:
+
+- **Branches move every month:** in each month before October, every manager hands their first branch to the next. That's 10 branches a month with a new manager, recorded in *Managers* rows for July, August and September.
+- **Things get better month by month,** so the trends have a direction: 342 issues in July, 275 in August, 232 in September.
+- **It's loaded with `load_workbook.py`'s own `load()`**, as if from daily files, and it passes every check in `validate_workbook.py`. There are no files and no photos, so the repo stays small, and the 14 sample daily files are unchanged.
+- **It only goes into a database whose name contains "sample" or "test"**, so fake data can't reach a real one.
+
+```bash
+createdb shawarma_classic_sample
+psql -d shawarma_classic_sample -f v2/sql/001_schema.sql
+export PGDATABASE=shawarma_classic_sample
+python v2/sample_data/fake_history.py                       # Jul 1 - Oct 12
+python v2/load_workbook.py                                  # the sample's daily files, Oct 13-26
+python v2/build_models.py
+REPORT_DATE=2026-09-30 python v2/period_reports.py          # September and Q3
+REPORT_DATE=2026-10-26 python v2/period_reports.py year     # 2026, so far
+```
+
+### Tested
+
+- **In a browser at computer size:** every chart draws, hovering shows the numbers, and the managers, branches and meals open.
+- **In Airflow:** the monthly run for 10:00 am on Oct 1 got the report date Sep 30. It did the load, then dbt (79 passed), then wrote the September and Q3 reports.
+- **Tests:**
+  - [test_period_reports.py](tests/test_period_reports.py) is new: 29 tests, no database needed. They cover:
+    - the periods, and which reports are due on which day;
+    - monthly by manager, quarterly and yearly by branch, and the meal chart only in the yearly;
+    - missed counts without times, "so far", and the first period;
+    - Plotly inside the file, once; both trends drawn as lines; the ranking from 0% to 100%, with the grade lines at 70, 80, 90 and 95;
+    - the fake history passing every workbook check, rotating every month and improving month by month.
+  - `test_database.py` has three new tests on the fake history plus the sample:
+    - the Oct 1 run writes September and Q3;
+    - Q3's issues, meals and descriptions match the raw rows, and its 36 branches give 108 branch-months;
+    - each September branch is under the manager who ran it in September;
+    - the year so far is the history plus the sample;
+    - a month with no data stops.
+  - dbt: five new unit tests, the monthly one moved, and checks on every new view.
+- **Planted bugs:** 22 bugs, one at a time. For example:
+  - quarters starting in the wrong month, a quarter compared with the month before, the quarter's report written every month, "vs last week" in a monthly report;
+  - a quarterly report organised by manager, the meal chart in every report, Plotly loaded from the internet, the rate scale starting at 0;
+  - branch-months counted as branches, a miss counted on every meal, a monthly run on every day, a fake history that never rotates;
+  - the issues drawn as dots without a line, the score left as 0 to 1, the scale cut to 60–100%, a grade line at 0.70 instead of 70%.
+
+  Each one made a test fail. One got past the first version of the tests: **branches ranked against all months at once** instead of their own month. That doesn't change the order within a month, only the grades, and the unit test's numbers happened to give the same grades. A new unit test has a July branch that is Excellent against July's best and only Good against August's.
+
+**Known limits:**
+- **No comparison with last year** until the v1 history is migrated: the yearly report says "no data for last year" and marks every branch and manager "new".
+- **About 5 MB per file,** because Plotly is inside. Fine for email. Loading Plotly from the internet instead would make them small, but then they'd need the internet to open.
+- **The charts need JavaScript:** open the reports in a browser on a computer, not in a phone's attachment preview.
+- **The monthly trend uses the Wednesday–Tuesday weeks that end in the month,** with the weekly reports' own numbers. So a month's first days can belong to a week shown in the month before, and the weeks don't add up exactly to the month's headline.
+- **The fake history is only for the sample.** The real history comes with the v1 migration.

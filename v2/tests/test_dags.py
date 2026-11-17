@@ -59,12 +59,13 @@ def sent(monkeypatch):
 
 
 def test_schedules(dags):
-    assert set(dags) == {"daily_issues", "weekly_ranking"}
+    assert set(dags) == {"daily_issues", "weekly_ranking", "period_reports"}
 
-    daily, weekly = dags["daily_issues"], dags["weekly_ranking"]
+    daily, weekly, monthly = dags["daily_issues"], dags["weekly_ranking"], dags["period_reports"]
     assert daily.timetable.expression == "59 23 * * *"  # every day, 11:59 pm
     assert weekly.timetable.expression == "0 9 * * 3"  # Wednesdays, 9:00 am
-    for dag in (daily, weekly):
+    assert monthly.timetable.expression == "0 10 1 * *"  # the 1st of every month, 10:00 am
+    for dag in (daily, weekly, monthly):
         assert dag.timetable.timezone.name == "Asia/Riyadh"
         assert dag.catchup is True
         assert dag.max_active_runs == 1
@@ -84,6 +85,13 @@ def test_tasks_and_order(dags):
     assert weekly["weekly_ranking"].op_kwargs == {"script": "weekly_ranking.py", "days_back": 1}
     assert weekly["weekly_dashboard"].op_kwargs == {"script": "weekly_dashboard.py", "days_back": 1}
 
+    # The 1st of the month: the report date is the day before, the month's last day
+    monthly = dags["period_reports"].task_dict
+    assert monthly["build_models"].upstream_task_ids == {"load_workbook"}
+    assert monthly["period_reports"].upstream_task_ids == {"build_models"}
+    for task in monthly.values():
+        assert task.op_kwargs["days_back"] == 1
+
     for dag in dags.values():
         for task in dag.tasks:
             assert task.retries == 0
@@ -97,6 +105,7 @@ def test_tasks_and_order(dags):
     [
         (riyadh(2026, 11, 12, 23, 59), 0, "2026-11-12"),  # daily: the run's own day
         (riyadh(2026, 11, 11, 9, 0), 1, "2026-11-10"),  # weekly on Wednesday: the week ends Tuesday
+        (riyadh(2026, 10, 1, 10, 0), 1, "2026-09-30"),  # monthly on Oct 1: September, and Q3
         # 00:30 on Nov 13 in Riyadh is still Nov 12 in UTC: the Riyadh day must win
         (pendulum.datetime(2026, 11, 12, 21, 30, tz="UTC"), 0, "2026-11-13"),
     ],

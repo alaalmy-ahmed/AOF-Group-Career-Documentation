@@ -13,7 +13,7 @@ All reports use a custom **Shawarma Classic theme** (colours and fonts set in a 
 
 All of them track the same two KPIs: **quality issues** (down is better) and **submission rate** (up is better).
 
-*In v2, [step 9](../v2/README.md#step-9-the-weekly-dashboard) replaces the Weekly Report with a web page the pipeline builds from the dbt views ([an example from the sample data](sample-weekly-dashboard.html)). The monthly, quarterly and yearly reports are next (step 10).*
+*In v2, [step 9](../v2/README.md#step-9-the-weekly-dashboard) replaces the Weekly Report with a web page the pipeline builds from the dbt views ([an example from the sample data](sample-weekly-dashboard.html)). [Step 10](../v2/README.md#step-10-monthly-quarterly-and-yearly-reports) does the same for the Monthly, Quarterly and Yearly Reports, with interactive Plotly charts (examples: [monthly](sample-monthly-report.html), [quarterly](sample-quarterly-report.html), [yearly](sample-yearly-report.html)).*
 
 Supporting reports built along the way: *Daily Reports*, *Missed and Done Tasks*, *Shawarma and Lubda Progress*, and branch issue deep dives for Lubda.
 

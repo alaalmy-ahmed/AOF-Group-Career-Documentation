@@ -3,6 +3,7 @@ openpyxl>=3.1
 psycopg2-binary>=2.9
 pillow>=10.0        # openpyxl needs it to embed the photos in the daily files
 pytest>=8.0         # step 5: the tests
+plotly>=6.0         # step 10: the interactive charts
 
 # Not here, because each needs its own install (README.md):
 #   Airflow (step 6): pinned versions, installed with its constraints file

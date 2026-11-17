@@ -137,15 +137,119 @@ models:
       - name: due_time
         data_tests: [not_null]
 
-  - name: manager_monthly_ranking
+  - name: period_kpis
     description: >
-      The monthly manager ranking: each branch counts for the manager who ran
-      it that month.
+      The two KPIs for all branches together, for every month, quarter and
+      year (step 10): the monthly, quarterly and yearly reports' headline numbers.
     data_tests:
       - unique:
-          column_name: "month || ' ' || manager"
+          column_name: "period || ' ' || period_start"
     columns:
-      - name: month
-        description: The month's first day
+      - name: period
+        description: "'month', 'quarter' or 'year'"
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["month", "quarter", "year"]
+      - name: period_start
+        description: The period's first day
+        data_tests: [not_null]
+      - name: submission_rate
+        description: 100 - missed / due * 100 for the whole period, rounded to 1 decimal
+        data_tests: [not_null]
+
+  - name: branch_period_ranking
+    description: >
+      The branch ranking for every month, quarter and year, with the weekly
+      method (step 10).
+    data_tests:
+      - unique:
+          column_name: "period || ' ' || period_start || ' ' || branch_code"
+    columns:
+      - name: period
+        description: "'month', 'quarter' or 'year'"
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["month", "quarter", "year"]
+      - name: period_start
+        description: The period's first day
+        data_tests: [not_null]
+      - name: manager
+        description: The branch's manager on the period's last day
+        data_tests: [not_null]
+      - name: branches_rank
+        data_tests: [not_null]
+      - name: completion_grade
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Excellent", "Good", "Fair", "Bad", "Terrible"]
+
+  - name: manager_period_ranking
+    description: >
+      The manager ranking for every month, quarter and year (step 10). Each
+      branch counts, month by month, for the manager who ran it that month.
+      Its 'month' rows are step 7's monthly manager ranking.
+    data_tests:
+      - unique:
+          column_name: "period || ' ' || period_start || ' ' || manager"
+    columns:
+      - name: period
+        description: "'month', 'quarter' or 'year'"
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["month", "quarter", "year"]
+      - name: period_start
+        description: The period's first day
+        data_tests: [not_null]
+      - name: branches
+        description: How many different branches the manager ran in the period
+      - name: branch_months
+        description: Branches times months; in a month it's the same as branches
       - name: managers_rank
+        data_tests: [not_null]
+      - name: completion_grade
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Excellent", "Good", "Fair", "Bad", "Terrible"]
+
+  - name: branch_meal_period
+    description: >
+      Each branch's meals for every month, quarter and year: tasks due,
+      missed, and quality issues (step 10).
+    data_tests:
+      - unique:
+          column_name: "period || ' ' || period_start || ' ' || branch_code || ' ' || meal"
+    columns:
+      - name: period
+        description: "'month', 'quarter' or 'year'"
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["month", "quarter", "year"]
+      - name: period_start
+        description: The period's first day
+        data_tests: [not_null]
+
+  - name: issue_descriptions_period
+    description: >
+      How many times each issue description came up for a branch's meal, for
+      every month, quarter and year (step 10).
+    data_tests:
+      - unique:
+          column_name: "period || ' ' || period_start || ' ' || branch_code || ' ' || meal || ' ' || description"
+    columns:
+      - name: period
+        description: "'month', 'quarter' or 'year'"
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["month", "quarter", "year"]
+      - name: period_start
+        description: The period's first day
+        data_tests: [not_null]
+      - name: description
         data_tests: [not_null]

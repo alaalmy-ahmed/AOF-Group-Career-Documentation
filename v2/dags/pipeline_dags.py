@@ -6,6 +6,8 @@ A DAG is a list of steps (tasks), the order they run in, and when to run.
     daily_issues     every day at 11:59 pm      distribute_issues.py
     weekly_ranking   Wednesdays at 9:00 am      load_workbook.py, build_models.py (dbt),
                                                 then weekly_ranking.py and weekly_dashboard.py
+    period_reports   the 1st, at 10:00 am       load_workbook.py, build_models.py (dbt),
+                                                then period_reports.py (step 10)
 
 Each task runs a script exactly as you would in a terminal, with
 REPORT_DATE set to the day the run is for. After each task, an email says
@@ -134,3 +136,33 @@ with DAG(
     # Each step runs only if the one before it succeeded. The Excel ranking and
     # the dashboard both need only the dbt views, so they run side by side.
     load >> models >> [ranking, dashboard]
+
+
+with DAG(
+    dag_id="period_reports",
+    schedule="0 10 1 * *",  # minute 0, hour 10, day 1 of every month
+    start_date=START_DATE,
+    catchup=True,
+    max_active_runs=1,
+    default_args=TASK_SETTINGS,
+):
+    # days_back=1: the report date is the month's last day. The load comes
+    # first, because the weekly load only runs on Wednesdays and the month's
+    # last days may not be in the database yet. period_reports.py writes the
+    # month's report, and the quarter's and the year's when they end that day.
+    load = PythonOperator(
+        task_id="load_workbook",
+        python_callable=run_script,
+        op_kwargs={"script": "load_workbook.py", "days_back": 1},
+    )
+    models = PythonOperator(
+        task_id="build_models",
+        python_callable=run_script,
+        op_kwargs={"script": "build_models.py", "days_back": 1},
+    )
+    reports = PythonOperator(
+        task_id="period_reports",
+        python_callable=run_script,
+        op_kwargs={"script": "period_reports.py", "days_back": 1},
+    )
+    load >> models >> reports
