@@ -453,7 +453,7 @@ Each grade has its own colour, from best to worst. The word is always written to
 ### Simple, and no JavaScript
 
 - **Area managers read it on their phones, from an attachment.** On an iPhone, tapping an attachment in WhatsApp or Mail opens a preview that doesn't run JavaScript, and Safari won't open a file saved on the phone. So the page is plain HTML: no JavaScript and no pictures.
-- **"Tap to open" is HTML's own `<details>` element.** It needs no JavaScript, but whether the iPhone preview lets you tap it is untested (see Known limits).
+- **"Tap to open" is HTML's own `<details>` element.** It needs no JavaScript, so it works in the iPhone's attachment preview too (tried on an iPhone, from WhatsApp).
 - **Everything that wasn't needed was taken out.** The first version had three charts (tasks by day, issues by meal, issues by branch) and two ranking tables. *By manager* shows the same rankings, grades and changes, so they were removed, and matplotlib with them.
 - **Arabic names stay in one piece.** Each name is inside `<bdi>`. Without it, the browser pulled the grade and the ▲ number that follow a name into its Arabic half, and showed "Al Malaz - 21 ▲ Excellent الملز".
 
@@ -479,6 +479,7 @@ In Airflow it's a fourth step in the Wednesday run. It starts once dbt has built
 
 ### Tested
 
+- **On a real iPhone:** sent on WhatsApp and opened in the preview, the page shows and tapping opens the managers, branches and meals.
 - **In a browser at phone size (375 px wide) and computer size:** no sideways scrolling, no JavaScript on the page, and tapping opens a manager, then a branch. That's how the Arabic-name problem above was found.
 - **In Airflow:** the weekly run on the sample did the load, then dbt, then the Excel ranking and the dashboard. (This was with the first version of the page. The task itself hasn't changed.)
 - **Tests:**
@@ -499,7 +500,7 @@ In Airflow it's a fourth step in the Wednesday run. It starts once dbt has built
   - **Missed times shown under every meal.** The made-up week had a missed task on only one meal. It now has one on two meals.
 
 **Known limits:**
-- **Not tested on a real iPhone.** That the preview doesn't run JavaScript is what people consistently report. There's no Xcode on this Mac, so there's no iPhone simulator to try it. Whether the preview lets you tap to open is also untested. If tapping doesn't work there, managers see only the manager lines. The fix is one word: `<details open>` shows everything open. Check it once: send yourself the sample dashboard on WhatsApp and open it on an iPhone and on an Android phone.
+- **Tried on an iPhone, not yet on Android.** Sent on WhatsApp and opened in the iPhone's preview, the page shows and tapping opens the managers, branches and meals. It hasn't been tried on an Android phone yet.
 - **"vs last week" needs last week in the database.** Like the PDF, the page is a snapshot of one week, so the first week after going live says "no data for last week".
 - **The sample's last week is partial.** The week before Oct 14–20 only has Oct 13, so issues seem to jump from 8 to 45. Real weeks are full.
 - **The Excel managers summary has no grade column.** It keeps the columns it has always had.
